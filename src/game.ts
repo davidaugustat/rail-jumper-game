@@ -1,62 +1,150 @@
 export type Kind = 'low' | 'high' | 'train' | 'coin';
-export interface Entity { id: number; kind: Kind; lane: number; z: number; y: number; extra: number; length: number }
+export interface Entity {
+  id: number; kind: Kind; lane: number; z: number; y: number; extra: number; length: number;
+  ramp?: boolean;
+}
 export type Phase = 'ready' | 'playing' | 'paused' | 'over';
 export const LANE_WIDTH = 3;
 export const SLIDE_TIME = .8;
 export const JUMP_SPEED = 9;
 export const GRAVITY = 24;
-export const MAX_SPEED = 28;
+export const START_SPEED = 18;
+export const MAX_SPEED = 30;
 export const STEP = 1 / 120;
-export function pattern(random: () => number) {
-  const safe = Math.floor(random() * 3) - 1;
-  const train = random() < .42;
-  const lanes = [-1, 0, 1].filter(l => l !== safe);
-  return { safe, obstacles: train ? [{ lane: lanes[Math.floor(random() * lanes.length)], kind: 'train' as Kind }] : lanes.map(lane => ({ lane, kind: (random() < .5 ? 'low' : 'high') as Kind })) };
+export const ROOF_HEIGHT = 3.28;
+export const RAMP_LENGTH = 10;
+export const GENERATION_DISTANCE = 650;
+const ACCELERATION = .15;
+
+// Integrate the speed curve so oncoming trains can be placed far away while
+// still meeting a stationary rooftop route at its planned encounter time.
+export function distanceAt(time: number) {
+  const accelerating = Math.min(time, (MAX_SPEED - START_SPEED) / ACCELERATION);
+  return START_SPEED * accelerating + .5 * ACCELERATION * accelerating ** 2 + MAX_SPEED * (time - accelerating);
 }
+export interface Route { time: number; safe: number; rooftop: boolean }
 export class Game {
   phase: Phase = 'ready'; lane = 0; x = 0; y = 0; vy = 0; slide = 0;
-  distance = 0; coins = 0; elapsed = 0; entities: Entity[] = []; nextId = 0; spawnClock = 0;
+  grounded = true; pendingSlide = false;
+  distance = 0; coins = 0; elapsed = 0; entities: Entity[] = []; nextId = 0;
+  nextEncounter = 3; row = 0; safeLane = 0; routes: Route[] = [];
   onEvent: (event: 'jump' | 'coin' | 'crash') => void = () => {};
   constructor(public random: () => number = Math.random) {}
-  get speed() { return Math.min(MAX_SPEED, 14 + this.elapsed * .15); }
+  get speed() { return Math.min(MAX_SPEED, START_SPEED + this.elapsed * ACCELERATION); }
   get score() { return Math.floor(this.distance) + this.coins * 10; }
-  start() { this.phase = 'playing'; this.lane = this.x = this.y = this.vy = this.slide = this.distance = this.coins = this.elapsed = this.nextId = 0; this.entities = []; this.spawnClock = 0; }
+  start() {
+    this.phase = 'playing'; this.lane = this.x = this.y = this.vy = this.slide = this.distance = this.coins = this.elapsed = this.nextId = this.row = this.safeLane = 0;
+    this.grounded = true; this.pendingSlide = false; this.entities = []; this.routes = []; this.nextEncounter = 3;
+    this.generateAhead();
+  }
   move(direction: number) { if (this.phase === 'playing') this.lane = Math.max(-1, Math.min(1, this.lane + direction)); }
-  jump() { if (this.phase === 'playing' && this.y === 0 && this.slide === 0) { this.vy = JUMP_SPEED; this.onEvent('jump'); } }
-  duck() { if (this.phase === 'playing' && this.y === 0 && this.vy === 0 && this.slide === 0) this.slide = SLIDE_TIME; }
+  jump() {
+    if (this.phase !== 'playing') return;
+    this.slide = 0; this.pendingSlide = false;
+    if (this.grounded) { this.grounded = false; this.vy = JUMP_SPEED; this.onEvent('jump'); }
+  }
+  duck() {
+    if (this.phase !== 'playing') return;
+    if (!this.grounded) { this.vy = Math.min(this.vy, -12); this.pendingSlide = true; }
+    else if (this.slide === 0) this.slide = SLIDE_TIME;
+  }
   pause() { if (this.phase === 'playing') this.phase = 'paused'; }
   resume() { if (this.phase === 'paused') this.phase = 'playing'; }
-  spawn() {
-    const p = pattern(this.random);
-    for (const obstacle of p.obstacles) {
-      const extra = obstacle.kind === 'train' && this.random() < .6 ? 8 : 0;
-      this.entities.push({ id: this.nextId++, ...obstacle, z: (this.speed + extra) * 4, y: 0, extra, length: obstacle.kind === 'train' ? 7 : .65 });
+  add(kind: Kind, lane: number, time: number, options: Partial<Entity> = {}) {
+    const extra = options.extra ?? 0;
+    const e: Entity = { id: this.nextId++, kind, lane, z: distanceAt(time) - this.distance + extra * (time - this.elapsed), y: 0, extra, length: kind === 'train' ? 24 : .65, ...options };
+    this.entities.push(e); return e;
+  }
+  coinsAlong(train: Entity) {
+    for (let offset = -train.length / 2 + 2; offset < train.length / 2; offset += 3) {
+      this.entities.push({ id: this.nextId++, kind: 'coin', lane: train.lane, z: train.z + offset, y: ROOF_HEIGHT + .9, extra: train.extra, length: .4 });
     }
-    for (let i = 0; i < 6; i++) this.entities.push({ id: this.nextId++, kind: 'coin', lane: p.safe, z: this.speed * 4 + i * 1.8, y: 1, extra: 0, length: .4 });
-    const low = p.obstacles.find(o => o.kind === 'low');
-    if (low) for (let i = -1; i <= 1; i++) this.entities.push({ id: this.nextId++, kind: 'coin', lane: low.lane, z: this.speed * 4 + i * 1.6, y: 2.4 - Math.abs(i) * .25, extra: 0, length: .4 });
+    if (train.ramp) for (let d = 2; d < RAMP_LENGTH; d += 2) this.entities.push({ id: this.nextId++, kind: 'coin', lane: train.lane, z: train.z - train.length / 2 - RAMP_LENGTH + d, y: ROOF_HEIGHT * d / RAMP_LENGTH + .9, extra: train.extra, length: .4 });
+  }
+  generateAhead() {
+    while (distanceAt(this.nextEncounter) - this.distance < GENERATION_DISTANCE) {
+      // Six closely spaced barrier rows followed by a two-train rooftop route.
+      // Train encounters occupy their own reserved time window, preventing a
+      // later row or faster train from blocking the one guaranteed ground route.
+      if (this.row % 7 === 6) {
+        const entry = Math.floor(this.random() * 3) - 1;
+        const target = entry === 0 ? (this.random() < .5 ? -1 : 1) : 0;
+        const safe = [-1, 0, 1].find(l => l !== entry && l !== target)!;
+        const time = this.nextEncounter + 1.3;
+        const train = this.add('train', entry, time, { ramp: true, length: 28 });
+        const passing = this.add('train', target, time + .25, { extra: 6 + this.random() * 4, length: 34 });
+        this.coinsAlong(train); this.coinsAlong(passing);
+        this.routes.push({ time: time - 1.35, safe, rooftop: true });
+        this.safeLane = safe; this.nextEncounter = time + 2;
+      } else {
+        // Change the free lane each row; adjacent changes need one key press.
+        this.safeLane = this.safeLane === 0 ? (this.random() < .5 ? -1 : 1) : 0;
+        const time = this.nextEncounter;
+        for (const lane of [-1, 0, 1].filter(l => l !== this.safeLane)) {
+          const kind = this.random() < .5 ? 'low' : 'high';
+          this.add(kind, lane, time);
+          if (kind === 'low') this.add('coin', lane, time, { y: 2.35, length: .4 });
+        }
+        for (let i = -1; i <= 1; i++) this.add('coin', this.safeLane, time, { z: distanceAt(time) - this.distance + i * 2, y: 1, length: .4 });
+        this.routes.push({ time, safe: this.safeLane, rooftop: false });
+        this.nextEncounter += Math.max(.86, 1.1 - time * .0015);
+      }
+      this.row++;
+    }
+  }
+  surface(e: Entity, x = this.x, z = e.z): number | undefined {
+    if (e.kind !== 'train' || Math.abs(x - e.lane * LANE_WIDTH) > 1.18) return;
+    if (Math.abs(z) <= e.length / 2) return ROOF_HEIGHT;
+    if (e.ramp && z > e.length / 2 && z <= e.length / 2 + RAMP_LENGTH) return ROOF_HEIGHT * (e.length / 2 + RAMP_LENGTH - z) / RAMP_LENGTH;
   }
   update(dt: number) {
     if (this.phase !== 'playing') return;
-    this.elapsed += dt; this.distance += this.speed * dt;
-    const oldX = this.x;
+    const beforeDistance = this.distance;
+    this.elapsed += dt; this.distance = distanceAt(this.elapsed);
+    const travel = this.distance - beforeDistance;
+    const oldX = this.x, oldY = this.y, wasGrounded = this.grounded;
     this.x += Math.max(-18 * dt, Math.min(18 * dt, this.lane * LANE_WIDTH - this.x));
-    if (this.vy !== 0 || this.y > 0) { this.y += this.vy * dt - .5 * GRAVITY * dt * dt; this.vy -= GRAVITY * dt; if (this.y <= 0) this.y = this.vy = 0; }
+    this.y += this.vy * dt - .5 * GRAVITY * dt * dt; this.vy -= GRAVITY * dt;
     this.slide = Math.max(0, this.slide - dt);
-    this.spawnClock -= dt;
-    if (this.spawnClock <= 0) { this.spawn(); this.spawnClock += 2.8; }
+    let floor = 0;
     for (const e of this.entities) {
-      const prev = e.z; e.z -= (this.speed + e.extra) * dt;
-      const half = e.length / 2 + .3;
-      const nearZ = e.z <= half && prev >= -half;
-      const nearX = Math.min(oldX, this.x) < e.lane * LANE_WIDTH + 1.12 && Math.max(oldX, this.x) > e.lane * LANE_WIDTH - 1.12;
+      const prevZ = e.z; e.z -= travel + e.extra * dt;
+      const surface = this.surface(e);
+      if (surface === undefined) continue;
+      const previousSurface = this.surface(e, oldX, prevZ);
+      const walking = wasGrounded && previousSurface !== undefined && Math.abs(oldY - previousSurface) < .08;
+      const enteringRamp = wasGrounded && e.ramp && surface <= (travel + e.extra * dt) * ROOF_HEIGHT / RAMP_LENGTH + .08 && oldY < .08;
+      const landing = this.vy <= 0 && oldY >= surface - .035 && this.y <= surface;
+      if (walking || enteringRamp || landing) floor = Math.max(floor, surface);
+    }
+    this.grounded = this.y <= floor && this.vy <= 0;
+    if (this.grounded) {
+      this.y = floor; this.vy = 0;
+      if (this.pendingSlide) { this.slide = SLIDE_TIME; this.pendingSlide = false; }
+    }
+    for (const e of this.entities) {
+      const prevZ = e.z + travel + e.extra * dt;
+      const half = e.length / 2 + .28;
+      const nearZ = e.z <= half && prevZ >= -half;
+      const nearX = Math.min(oldX, this.x) < e.lane * LANE_WIDTH + 1.35 && Math.max(oldX, this.x) > e.lane * LANE_WIDTH - 1.35;
+      if (e.kind === 'train' && e.ramp) {
+        const rampHeight = this.surface(e);
+        if (rampHeight !== undefined && this.y < rampHeight - .12) { this.crash(); break; }
+      }
       if (!nearZ || !nearX) continue;
       if (e.kind === 'coin') {
-        if (Math.abs(this.x - e.lane * LANE_WIDTH) < .75 && Math.abs(this.y + (this.slide > 0 ? .45 : .9) - e.y) < .85) { e.z = -100; this.coins++; this.onEvent('coin'); }
-      } else if (e.kind === 'train' || (e.kind === 'low' && this.y < .95) || (e.kind === 'high' && this.y + (this.slide > 0 ? .65 : 1.7) > 1.05)) {
-        this.phase = 'over'; this.onEvent('crash'); break;
+        if (Math.abs(this.x - e.lane * LANE_WIDTH) < .75 && Math.abs(this.y + (this.slide > 0 ? .45 : .9) - e.y) < .85) { e.z = -1000; this.coins++; this.onEvent('coin'); }
+      } else {
+        const head = this.y + (this.slide > 0 ? .65 : 1.7);
+        const hitTrain = e.kind === 'train' && this.y < ROOF_HEIGHT - .08 && !(e.ramp && e.z > e.length / 2);
+        const hitLow = e.kind === 'low' && this.y < e.y + .95 && head > e.y;
+        const hitHigh = e.kind === 'high' && head > e.y + 1.05 && this.y < e.y + 2.6;
+        if (hitTrain || hitLow || hitHigh) { this.crash(); break; }
       }
     }
-    this.entities = this.entities.filter(e => e.z > -12);
+    this.entities = this.entities.filter(e => e.z > -e.length / 2 - 20);
+    this.routes = this.routes.filter(r => r.time > this.elapsed - 5);
+    if (this.phase === 'playing') this.generateAhead();
   }
+  crash() { this.phase = 'over'; this.onEvent('crash'); }
 }

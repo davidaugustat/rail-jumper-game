@@ -5,7 +5,7 @@ for (const [name, engine] of [['chromium', chromium], ['firefox', firefox]].filt
   try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  // Reproducible first row: both outer lanes blocked; center is safe.
+  // Reproducible obstacle choices while keeping Three.js material IDs unique.
   await page.addInitScript(() => { let seed = 123; Math.random = () => .45 + (((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * .1); });
   await page.goto('http://localhost:5173');
   await page.locator('#start').waitFor();
