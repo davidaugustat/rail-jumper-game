@@ -1,4 +1,4 @@
-# Railrush
+# RailJumper
 
 A colorful 3D endless railway runner built with TypeScript and Three.js. All gameplay, rendering, procedural models, sound effects, and score persistence run in the browser.
 
@@ -43,6 +43,6 @@ npm run test:browser
 npm run test:rooftops
 ```
 
-The Chromium tests exercise keyboard input, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railrush-chromium-*.png`. Fonts are bundled with the application; no external asset requests are required.
+The Chromium tests exercise keyboard input, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railjumper-chromium-*.png`. Fonts are bundled with the application; no external asset requests are required.
 
-The rooftop browser test renders ramp climbs, jumps to passing trains, tunnels and the river bridge, and verifies the distant generation and model budget. `SCREENSHOTS=1 npm run test:rooftops` captures those scenes under `/tmp/railrush-*.png`.
+The rooftop browser test renders ramp climbs, jumps to passing trains, tunnels and the river bridge, and verifies the distant generation and model budget. `SCREENSHOTS=1 npm run test:rooftops` captures those scenes under `/tmp/railjumper-*.png`.

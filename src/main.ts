@@ -15,7 +15,7 @@ const soundIcon = (muted: boolean) =>
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <main class="game-frame"><canvas id="scene" aria-label="3D railway running game"></canvas><div class="vignette"></div>
-<header class="topbar"><a class="brand" href="./" aria-label="Railrush home"><span class="brand-icon">↟</span> RAILRUSH<span class="brand-dot">®</span></a><button id="sound" class="icon-button" aria-label="Mute sound" title="Mute sound"></button></header>
+<header class="topbar"><a class="brand" href="./" aria-label="RailJumper home"><span class="brand-icon">↟</span> RAILJUMPER<span class="brand-dot">®</span></a><button id="sound" class="icon-button" aria-label="Mute sound" title="Mute sound"></button></header>
 <div id="hud" class="hud" hidden><div class="stat"><span>SCORE</span><strong id="score">00000</strong></div><div class="stat coins"><span>COINS</span><strong><i>✦</i> <b id="coins">0</b></strong></div><button id="pause" class="icon-button" aria-label="Pause game" title="Pause (Esc)">${pauseIcon}</button></div>
 <section id="welcome" class="welcome"><div class="eyebrow"><span></span> A LITTLE SPEED. A LOT OF SUNSHINE.</div><h1>Next stop:<br><em>full speed.</em></h1><p>Three tracks. Endless possibilities.<br>Race up ramps, leap between trains,<br>and chase the coins over the rooftops.</p><button id="start" class="primary">LET’S RUN <span>↗</span></button><div class="start-note">PRESS ENTER TO HIT THE TRACKS</div><div class="best-line"><span>♜</span><div>YOUR PERSONAL BEST<strong id="welcome-best">0 <small>PTS</small></strong></div></div></section>
 <div id="scene-sticker" class="scene-sticker"><span>GOLD RAMPS LEAD UP</span><strong>Take the roof.</strong><svg width="75" height="26" viewBox="0 0 75 26" aria-hidden="true"><path d="M3 7 Q32 0 66 16 M54 4 L68 17 L51 22" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
@@ -33,7 +33,7 @@ try {
 }
 const game = new Game(),
   sound = new Sound();
-(window as unknown as Record<symbol, Game>)[Symbol.for('railrush.game')] = game;
+(window as unknown as Record<symbol, Game>)[Symbol.for('railjumper.game')] = game;
 game.entities = [
   { id: -1, kind: 'train', lane: 1, z: 35, y: 0, extra: 0, length: 28, ramp: true },
   { id: -2, kind: 'train', lane: 0, z: 55, y: 0, extra: 8, length: 34 },
@@ -62,8 +62,8 @@ function save(key: string, value: string) {
     // Persistence is optional when browser storage is unavailable.
   }
 }
-let best = Math.max(0, Number(read('railrush-best')) || 0);
-sound.muted = read('railrush-muted') === 'true';
+let best = Math.max(0, Number(read('railjumper-best')) || 0);
+sound.muted = read('railjumper-muted') === 'true';
 $('welcome-best').innerHTML = `${best.toLocaleString()} <small>PTS</small>`;
 function soundButton() {
   $('sound').innerHTML = soundIcon(sound.muted);
@@ -75,7 +75,7 @@ soundButton();
 $('sound').onclick = () => {
   sound.unlock();
   sound.muted = !sound.muted;
-  save('railrush-muted', String(sound.muted));
+  save('railjumper-muted', String(sound.muted));
   soundButton();
 };
 function start() {
@@ -111,7 +111,7 @@ function resume() {
 function end() {
   const newBest = game.score > best;
   best = Math.max(best, game.score);
-  save('railrush-best', String(best));
+  save('railjumper-best', String(best));
   app.classList.remove('playing');
   $('modal').hidden = false;
   $('modal-eyebrow').textContent = 'END OF THE LINE. FOR NOW.';

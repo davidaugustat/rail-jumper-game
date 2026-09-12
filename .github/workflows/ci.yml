@@ -56,7 +56,7 @@ jobs:
       - name: Upload static site
         uses: actions/upload-artifact@v4
         with:
-          name: railrush-static-site
+          name: railjumper-static-site
           path: dist/
           if-no-files-found: error
 
@@ -81,7 +81,7 @@ jobs:
 
       - name: Run browser test suites
         run: |
-          npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/railrush-vite.log 2>&1 &
+          npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/railjumper-vite.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in {1..30}; do

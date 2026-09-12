@@ -47,7 +47,7 @@ try {
   await page.waitForTimeout(100);
   await page.evaluate(() => document.fonts.ready);
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-welcome.png` });
+    await page.screenshot({ timeout: 60000, path: `/tmp/railjumper-${name}-welcome.png` });
   await page.locator('#start').click();
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#hud').isVisible(), true);
@@ -74,7 +74,7 @@ try {
   assert.equal(await page.locator('#score').textContent(), score);
   await page.locator('#continue').click();
   await page.evaluate(() => {
-    const game = window[Symbol.for('railrush.game')];
+    const game = window[Symbol.for('railjumper.game')];
     // Keep the UI-driven run active while isolating the collision scenarios.
     game.entities = [];
     game.routes = [];
@@ -83,10 +83,10 @@ try {
   await page.waitForTimeout(1500);
   await page.keyboard.press('Escape');
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-playing.png` });
+    await page.screenshot({ timeout: 60000, path: `/tmp/railjumper-${name}-playing.png` });
   await page.locator('#continue').click();
   await page.evaluate(() => {
-    const game = window[Symbol.for('railrush.game')];
+    const game = window[Symbol.for('railjumper.game')];
     game.lane = 0;
     game.x = 0;
     game.moveOrigin = 0;
@@ -101,15 +101,15 @@ try {
     game.move(lane - game.lane);
     for (let step = 0; step < 20; step++) game.update(1 / 120);
   });
-  assert.equal(await page.evaluate(() => window[Symbol.for('railrush.game')].phase), 'playing');
-  assert.ok((await page.evaluate(() => window[Symbol.for('railrush.game')].bonkWindow)) > 0);
+  assert.equal(await page.evaluate(() => window[Symbol.for('railjumper.game')].phase), 'playing');
+  assert.ok((await page.evaluate(() => window[Symbol.for('railjumper.game')].bonkWindow)) > 0);
   await page.evaluate(() => {
-    const game = window[Symbol.for('railrush.game')];
+    const game = window[Symbol.for('railjumper.game')];
     game.crash();
   });
   assert.deepEqual(
     await page.evaluate(() => ({
-      phase: window[Symbol.for('railrush.game')].phase,
+      phase: window[Symbol.for('railjumper.game')].phase,
       modalHidden: document.querySelector('#modal').hidden,
       title: document.querySelector('#modal-title').textContent,
     })),
@@ -125,10 +125,10 @@ try {
   assert.equal(await page.locator('#sound .mute-stroke').count(), 1);
   await page.reload();
   assert.equal(await page.locator('#sound').getAttribute('aria-label'), 'Unmute sound');
-  assert.ok((await page.evaluate(() => Number(localStorage.getItem('railrush-best')))) > 0);
+  assert.ok((await page.evaluate(() => Number(localStorage.getItem('railjumper-best')))) > 0);
   await page.setViewportSize({ width: 900, height: 700 });
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-compact.png` });
+    await page.screenshot({ timeout: 60000, path: `/tmp/railjumper-${name}-compact.png` });
   assert.deepEqual(errors, []);
   console.log(
     `${name}: start, keyboard, pause, collision, restart, focus, persistence, resize passed`,

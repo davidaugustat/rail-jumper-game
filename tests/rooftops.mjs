@@ -16,13 +16,13 @@ try {
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
-  await page.route('**/__railrush-test', (route) =>
+  await page.route('**/__railjumper-test', (route) =>
     route.fulfill({
       contentType: 'text/html',
       body: '<html><style>body{margin:0}canvas{width:100vw;height:100vh;display:block}</style><canvas id="scene"></canvas></html>',
     }),
   );
-  await page.goto('http://localhost:5173/__railrush-test');
+  await page.goto('http://localhost:5173/__railjumper-test');
   await page.evaluate(async () => {
     const { Game, STEP, ROOF_HEIGHT } = await import('/src/game.ts');
     const { World } = await import('/src/scene.ts');
@@ -94,14 +94,14 @@ try {
   assert.ok(landmarks.far >= 800);
   assert.ok(landmarks.fogEnd >= 550);
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ path: '/tmp/railrush-tunnel-roof.png', timeout: 60000 });
+    await page.screenshot({ path: '/tmp/railjumper-tunnel-roof.png', timeout: 60000 });
   await page.evaluate(() => {
     const { game: g, world: w } = window.harness;
     g.distance = 370;
     w.render(g, g.elapsed);
   });
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ path: '/tmp/railrush-bridge-roof.png', timeout: 60000 });
+    await page.screenshot({ path: '/tmp/railjumper-bridge-roof.png', timeout: 60000 });
   const horizon = await page.evaluate(() => {
     const { game: g, world: w } = window.harness;
     g.start();
@@ -116,7 +116,7 @@ try {
   assert.ok(horizon.models < 350);
   assert.ok(horizon.calls < 1000);
   if (process.env.SCREENSHOTS)
-    await page.screenshot({ path: '/tmp/railrush-dense-horizon.png', timeout: 60000 });
+    await page.screenshot({ path: '/tmp/railjumper-dense-horizon.png', timeout: 60000 });
   assert.deepEqual(errors, []);
   console.log(
     'Chromium: rendered ramp climb, passing-roof landing, enclosed tunnels, bridge, horizon and bounded models passed',
