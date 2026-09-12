@@ -87,6 +87,15 @@ try {
   await page.locator('#continue').click();
   await page.evaluate(() => {
     const game = window[Symbol.for('railrush.game')];
+    game.lane = 0;
+    game.x = 0;
+    game.moveOrigin = 0;
+    game.y = 0;
+    game.vy = 0;
+    game.grounded = true;
+    game.slide = 0;
+    game.pendingSlide = false;
+    game.bonkWindow = 0;
     const lane = game.lane === 1 ? 0 : game.lane + 1;
     game.entities = [{ id: 9001, kind: 'train', lane, z: 0, y: 0, extra: -game.speed, length: 28 }];
     game.move(lane - game.lane);
