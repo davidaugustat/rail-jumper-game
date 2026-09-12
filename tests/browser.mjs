@@ -92,6 +92,11 @@ for (const [name, engine] of [
     await page.locator('#continue').click();
     await page.evaluate(() => {
       const game = window[Symbol.for('railrush.game')];
+      // Isolate this collision test from the animated game's generated obstacles.
+      game.start();
+      game.entities = [];
+      game.routes = [];
+      game.nextEncounter = 1e9;
       const lane = game.lane === 1 ? 0 : game.lane + 1;
       game.entities = [
         { id: 9001, kind: 'train', lane, z: 0, y: 0, extra: -game.speed, length: 28 },
