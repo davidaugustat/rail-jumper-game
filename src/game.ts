@@ -24,6 +24,8 @@ export const RAMP_LENGTH = 10;
 export const GENERATION_DISTANCE = 650;
 export const BONK_WINDOW = 10;
 const ACCELERATION = 0.15;
+const TRAIN_CONTACT_MARGIN = 0.28;
+const PASSING_ROOF_LANDING_GRACE = 0.2;
 
 // Integrate the speed curve so oncoming trains can be placed far away while
 // still meeting a stationary rooftop route at its planned encounter time.
@@ -238,11 +240,12 @@ export class Game {
       this.row++;
     }
   }
-  surface(e: Entity, x = this.x, z = e.z): number | undefined {
+  surface(e: Entity, x = this.x, z = e.z, roofMargin = 0): number | undefined {
     if (e.kind !== 'train' || Math.abs(x - e.lane * LANE_WIDTH) > 1.18) return;
     if (Math.abs(z) <= e.length / 2) return ROOF_HEIGHT;
     if (e.ramp && z > e.length / 2 && z <= e.length / 2 + RAMP_LENGTH)
       return (ROOF_HEIGHT * (e.length / 2 + RAMP_LENGTH - z)) / RAMP_LENGTH;
+    if (!e.ramp && Math.abs(z) <= e.length / 2 + roofMargin) return ROOF_HEIGHT;
   }
   update(dt: number) {
     if (this.phase !== 'playing') return;
@@ -264,13 +267,13 @@ export class Game {
     for (const e of this.entities) {
       const prevZ = e.z;
       e.z -= travel + e.extra * dt;
-      const surface = this.surface(e);
+      const surface = this.surface(e, this.x, e.z, TRAIN_CONTACT_MARGIN);
       if (surface === undefined) continue;
-      const previousSurface = this.surface(e, oldX, prevZ);
+      const previousSurface = this.surface(e, oldX, prevZ, TRAIN_CONTACT_MARGIN);
       // During a diagonal landing oldX may still be outside the ramp. Sample
       // its previous height at the new x so a fast ramp cannot rise through
       // the runner between fixed simulation steps.
-      const previousSurfaceAtNewX = this.surface(e, this.x, prevZ);
+      const previousSurfaceAtNewX = this.surface(e, this.x, prevZ, TRAIN_CONTACT_MARGIN);
       const walking =
         wasGrounded && previousSurface !== undefined && Math.abs(oldY - previousSurface) < 0.08;
       const enteringRamp =
@@ -278,11 +281,18 @@ export class Game {
         e.ramp &&
         surface <= ((travel + e.extra * dt) * ROOF_HEIGHT) / RAMP_LENGTH + 0.08 &&
         oldY < 0.08;
-      const landingSurface = previousSurface ?? previousSurfaceAtNewX;
+      const passingRoofArrival =
+        !e.ramp && surface === ROOF_HEIGHT && previousSurfaceAtNewX === undefined;
+      // Favor a successful transfer when a passing train arrives just after
+      // the runner reaches roof height. This small grace prevents a visually
+      // valid landing from becoming a frontal crash at the train's nose.
+      const landingSurface =
+        previousSurface ?? previousSurfaceAtNewX ?? (passingRoofArrival ? surface : undefined);
+      const landingGrace = passingRoofArrival ? PASSING_ROOF_LANDING_GRACE : 0.035;
       const landing =
         this.vy <= 0 &&
         landingSurface !== undefined &&
-        oldY >= landingSurface - 0.035 &&
+        oldY >= landingSurface - landingGrace &&
         this.y <= surface;
       if ((walking || enteringRamp || landing) && surface >= floor) {
         floor = surface;
@@ -302,7 +312,7 @@ export class Game {
     }
     for (const e of this.entities) {
       const prevZ = e.z + travel + e.extra * dt;
-      const half = e.length / 2 + 0.28;
+      const half = e.length / 2 + TRAIN_CONTACT_MARGIN;
       const nearZ = e.z <= half && prevZ >= -half;
       const nearX =
         Math.min(oldX, this.x) < e.lane * LANE_WIDTH + 1.35 &&
