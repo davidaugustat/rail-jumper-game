@@ -9,16 +9,31 @@ for (const [name, engine] of [['chromium', chromium], ['firefox', firefox]].filt
   await page.addInitScript(() => { let seed = 123; Math.random = () => .45 + (((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * .1); });
   await page.goto('http://localhost:5173');
   await page.locator('#start').waitFor();
+  assert.equal(await page.locator('.game-frame').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width === innerWidth && rect.height === innerHeight;
+  }), true);
+  assert.equal(await page.locator('.controls').isVisible(), true);
+  for (const removed of ['Suncoast Line', 'Endless Mode', 'All Good Ahead', 'The Endless Summer Run', 'Find your rhythm', 'The basics']) {
+    assert.equal((await page.locator('body').innerText()).toLowerCase().includes(removed.toLowerCase()), false);
+  }
+  assert.equal(await page.locator('#pause svg').count(), 1);
+  assert.equal(await page.locator('#sound svg').count(), 1);
   await page.waitForTimeout(100);
   await page.evaluate(() => document.fonts.ready);
   if (process.env.SCREENSHOTS) await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-welcome.png` });
   await page.locator('#start').click();
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#hud').isVisible(), true);
+  assert.deepEqual(await page.locator('.controls').evaluate(element => {
+    const style = getComputedStyle(element);
+    return { visibility: style.visibility, opacity: style.opacity, pointerEvents: style.pointerEvents };
+  }), { visibility: 'hidden', opacity: '0', pointerEvents: 'none' });
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(500); await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#modal-title').textContent(), 'On a break.');
+  assert.equal(await page.locator('.controls').isVisible(), true);
   const score = await page.locator('#score').textContent(); await page.waitForTimeout(200);
   assert.equal(await page.locator('#score').textContent(), score);
   await page.locator('#continue').click();
@@ -26,16 +41,18 @@ for (const [name, engine] of [['chromium', chromium], ['firefox', firefox]].filt
   await page.keyboard.press('Escape');
   if (process.env.SCREENSHOTS) await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-playing.png` });
   await page.locator('#continue').click();
-  await page.keyboard.press('ArrowRight');
+  await page.evaluate(() => window[Symbol.for('railrush.game')].crash());
   await page.locator('#modal-title').filter({ hasText: 'What a ride.' }).waitFor({ timeout: 20000 });
   assert.equal(await page.locator('#modal-title').textContent(), 'What a ride.');
   assert.equal(await page.locator('#modal').isVisible(), true);
+  assert.equal(await page.locator('.controls').isVisible(), true);
   assert.ok(Number(await page.locator('#final-score').textContent()) > 0);
   await page.locator('#continue').click();
   assert.equal(await page.locator('#modal').isVisible(), false);
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   assert.equal(await page.locator('#modal-title').textContent(), 'On a break.');
   await page.locator('#sound').click();
+  assert.equal(await page.locator('#sound .mute-stroke').count(), 1);
   await page.reload();
   assert.equal(await page.locator('#sound').getAttribute('aria-label'), 'Unmute sound');
   assert.ok(await page.evaluate(() => Number(localStorage.getItem('railrush-best'))) > 0);

@@ -43,14 +43,18 @@ describe('ramps and moving train roofs', () => {
   it('does not teleport a falling player through a train body onto its roof', () => { const g = clean(); g.y = 2; g.grounded = false; g.vy = -2; g.entities = [obstacle('train')]; tick(g,STEP); expect(g.phase).toBe('over'); });
 });
 describe('denser, distant obstacle generation', () => {
-  it('prefills the horizon with close barrier rows and paired rooftop routes', () => {
+  it('prefills the horizon with train-heavy mixed rows and paired rooftop routes', () => {
     const g = new Game(rng(12)); g.start();
     expect(Math.max(...g.entities.map(e=>e.z))).toBeGreaterThan(GENERATION_DISTANCE - 50);
     expect(g.entities.filter(e=>e.kind==='train'&&e.ramp).length).toBeGreaterThan(1);
     expect(g.entities.some(e=>e.kind==='train'&&e.extra>0)).toBe(true);
     const rows = g.routes.filter(r=>!r.rooftop);
     expect(rows[1].time - rows[0].time).toBeLessThan(1.11);
-    expect(g.entities.filter(e=>e.kind!=='coin').length).toBeGreaterThan(35);
+    expect(g.entities.filter(e=>e.kind!=='coin').length).toBeGreaterThan(30);
+    const trains = g.entities.filter(e=>e.kind==='train').length;
+    const barriers = g.entities.filter(e=>e.kind==='low'||e.kind==='high').length;
+    expect(trains).toBeGreaterThan(barriers);
+    expect(g.routes.filter(r=>r.rooftop).length).toBeGreaterThan(g.routes.length / 4);
   });
   it('oncoming trains stay aligned to scheduled encounters through acceleration', () => {
     const g = clean(); const e = g.add('train',1,10,{extra:8}); tick(g,10); expect(e.z).toBeCloseTo(0,7); expect(g.phase).toBe('playing');
@@ -62,7 +66,10 @@ describe('denser, distant obstacle generation', () => {
         const next = g.routes.find(r=>r.time >= g.elapsed - .15);
         if (next && next.time < g.elapsed + .5) g.lane = next.safe;
         g.update(STEP); maxEntities = Math.max(maxEntities,g.entities.length);
-        if (g.phase !== 'playing') throw new Error(`seed ${seed}, time ${g.elapsed.toFixed(3)}, lane ${g.lane}, next ${JSON.stringify(next)}`);
+        if (g.phase !== 'playing') {
+          const nearby = g.entities.filter(e => e.kind !== 'coin' && Math.abs(e.z) < 45).map(e => ({ kind:e.kind,lane:e.lane,z:+e.z.toFixed(2),length:+e.length.toFixed(2),extra:+e.extra.toFixed(2),ramp:e.ramp }));
+          throw new Error(`seed ${seed}, time ${g.elapsed.toFixed(3)}, lane ${g.lane}, x ${g.x.toFixed(2)}, next ${JSON.stringify(next)}, nearby ${JSON.stringify(nearby)}`);
+        }
       }
       expect(maxEntities).toBeLessThan(350); expect(g.distance).toBeGreaterThan(4500);
     }

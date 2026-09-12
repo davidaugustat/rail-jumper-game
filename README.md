@@ -23,7 +23,7 @@ npm run preview
 
 Upload the contents of `dist/` to a static host. There is no application server, database, runtime API, or account system. Local development and preview use Vite to serve static frontend files. Best score and mute preference use localStorage when available. Browser audio starts only following player interaction.
 
-Desktop browsers with WebGL 2 and hardware acceleration are required. Models and sounds are generated locally. Difficulty rises from 18 to 30 meters/second. Barrier rows arrive every 0.86–1.1 seconds, interleaved with longer stationary ramp trains and adjacent oncoming trains. Each section preserves a reachable ground route; roof routes offer extra coins. Obstacles are generated 650 meters ahead, fog fades from 220 to 560 meters, and the 800-meter scenery loop includes enclosed tunnels and a truss bridge over water. A fixed 120 Hz simulation, instanced scenery, merged models, and recycled objects keep the longer view bounded.
+Desktop browsers with WebGL 2 and hardware acceleration are required. Models and sounds are generated locally. Difficulty rises from 18 to 30 meters/second. Train-heavy mixed rows pair one train with one barrier, and every third encounter adds a longer stationary ramp train beside a passing train. Each section preserves a reachable ground route; roof routes offer extra coins. Obstacles are generated 650 meters ahead, fog fades from 220 to 560 meters, and the 800-meter scenery loop includes enclosed tunnels and a truss bridge over water. A fixed 120 Hz simulation, instanced scenery, merged models, and recycled objects keep the longer view bounded.
 
 ## Structure
 

@@ -28,13 +28,14 @@ export class Game {
   grounded = true; pendingSlide = false;
   distance = 0; coins = 0; elapsed = 0; entities: Entity[] = []; nextId = 0;
   nextEncounter = 3; row = 0; safeLane = 0; routes: Route[] = [];
+  lastTrainLane: number | undefined;
   onEvent: (event: 'jump' | 'coin' | 'crash') => void = () => {};
   constructor(public random: () => number = Math.random) {}
   get speed() { return Math.min(MAX_SPEED, START_SPEED + this.elapsed * ACCELERATION); }
   get score() { return Math.floor(this.distance) + this.coins * 10; }
   start() {
     this.phase = 'playing'; this.lane = this.x = this.y = this.vy = this.slide = this.distance = this.coins = this.elapsed = this.nextId = this.row = this.safeLane = 0;
-    this.grounded = true; this.pendingSlide = false; this.entities = []; this.routes = []; this.nextEncounter = 3;
+    this.grounded = true; this.pendingSlide = false; this.entities = []; this.routes = []; this.nextEncounter = 3; this.lastTrainLane = undefined;
     this.generateAhead();
   }
   move(direction: number) { if (this.phase === 'playing') this.lane = Math.max(-1, Math.min(1, this.lane + direction)); }
@@ -63,10 +64,12 @@ export class Game {
   }
   generateAhead() {
     while (distanceAt(this.nextEncounter) - this.distance < GENERATION_DISTANCE) {
-      // Six closely spaced barrier rows followed by a two-train rooftop route.
+      // Two mixed rows followed by a two-train rooftop route. Every row has at
+      // least one train, making trains the dominant hazard while preserving a
+      // verified ground lane through overlapping encounters.
       // Train encounters occupy their own reserved time window, preventing a
       // later row or faster train from blocking the one guaranteed ground route.
-      if (this.row % 7 === 6) {
+      if (this.row % 3 === 2) {
         const entry = Math.floor(this.random() * 3) - 1;
         const target = entry === 0 ? (this.random() < .5 ? -1 : 1) : 0;
         const safe = [-1, 0, 1].find(l => l !== entry && l !== target)!;
@@ -75,18 +78,30 @@ export class Game {
         const passing = this.add('train', target, time + .25, { extra: 6 + this.random() * 4, length: 34 });
         this.coinsAlong(train); this.coinsAlong(passing);
         this.routes.push({ time: time - 1.35, safe, rooftop: true });
-        this.safeLane = safe; this.nextEncounter = time + 2;
+        this.safeLane = safe; this.lastTrainLane = undefined; this.nextEncounter = time + 2;
       } else {
-        // Change the free lane each row; adjacent changes need one key press.
-        this.safeLane = this.safeLane === 0 ? (this.random() < .5 ? -1 : 1) : 0;
-        const time = this.nextEncounter;
-        for (const lane of [-1, 0, 1].filter(l => l !== this.safeLane)) {
-          const kind = this.random() < .5 ? 'low' : 'high';
-          this.add(kind, lane, time);
-          if (kind === 'low') this.add('coin', lane, time, { y: 2.35, length: .4 });
+        // A pair of mixed rows shares its safe lane. Long trains can therefore
+        // overlap visually without forcing the player across a train's tail.
+        if (this.row % 3 === 0) {
+          const choices = [-1, 0, 1].filter(l => l !== this.safeLane && l !== this.lastTrainLane);
+          this.safeLane = choices[Math.floor(this.random() * choices.length)] ?? this.safeLane;
         }
+        const time = this.nextEncounter;
+        const blocked = [-1, 0, 1].filter(l => l !== this.safeLane);
+        const trainLane = blocked[Math.floor(this.random() * blocked.length)];
+        const barrierLane = blocked.find(l => l !== trainLane)!;
+        this.add('train', trainLane, time, {
+          extra: this.random() < .6 ? 5 + this.random() * 4 : 0,
+          length: 14 + this.random() * 5,
+        });
+        this.lastTrainLane = trainLane;
+        const kind = this.random() < .5 ? 'low' : 'high';
+        this.add(kind, barrierLane, time);
+        if (kind === 'low') this.add('coin', barrierLane, time, { y: 2.35, length: .4 });
         for (let i = -1; i <= 1; i++) this.add('coin', this.safeLane, time, { z: distanceAt(time) - this.distance + i * 2, y: 1, length: .4 });
-        this.routes.push({ time, safe: this.safeLane, rooftop: false });
+        // Route time is the decision point at the front of the longest train,
+        // leaving enough time to complete a lane change before its nose arrives.
+        this.routes.push({ time: time - .45, safe: this.safeLane, rooftop: false });
         this.nextEncounter += Math.max(.86, 1.1 - time * .0015);
       }
       this.row++;
