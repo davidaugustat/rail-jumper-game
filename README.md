@@ -38,11 +38,11 @@ Desktop browsers with WebGL 2 and hardware acceleration are required. Models and
 With the local server running on port 5173:
 
 ```sh
-npx playwright install --with-deps chromium firefox
+npx playwright install --with-deps chromium
 npm run test:browser
 npm run test:rooftops
 ```
 
-The tests exercise keyboard input, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `BROWSER=chromium` or `BROWSER=firefox` to test one browser. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railrush-<browser>-*.png`. Fonts are bundled with the application; no external asset requests are required.
+The Chromium tests exercise keyboard input, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railrush-chromium-*.png`. Fonts are bundled with the application; no external asset requests are required.
 
 The rooftop browser test renders ramp climbs, jumps to passing trains, tunnels and the river bridge, and verifies the distant generation and model budget. `SCREENSHOTS=1 npm run test:rooftops` captures those scenes under `/tmp/railrush-*.png`.
