@@ -26,4 +26,4 @@ Add or update focused Vitest cases in `src/game.test.ts` for gameplay changes. D
 
 ## Commit & Pull Request Guidelines
 
-Recent history uses short, imperative subjects such as `Fix browser tests` and `Remove brand R`; follow that style and keep each commit scoped. Pull requests should summarize the gameplay or rendering impact, list verification commands, link relevant issues, and include screenshots or recordings for visible changes. Do not commit generated `dist/` output or local test screenshots.
+Do not commit anything. The maintainer of this project will commit your changes manually. However, you may still use git to look at the history, if needed.
