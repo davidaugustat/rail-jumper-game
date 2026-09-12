@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. Arrow left/right change tracks, up jumps (and cancels a slide), and down slides or cuts a jump short with a fast drop. A fast drop starts a slide on landing, including on train roofs. Escape pauses or resumes. Enter starts/restarts. Low striped barriers can be jumped; elevated striped barriers can be slid under. Gold ramps let you run onto train roofs. Jump and change lanes to land on an adjacent passing train; running off a roof drops you back to the tracks. Train fronts and sides are still fatal below roof height. Coins add 10 points each, and every meter adds one point.
+Open the local URL printed by Vite. Arrow left/right change tracks, up jumps (and cancels a slide), and down slides or cuts a jump short with a fast drop. A fast drop starts a slide on landing, including on train roofs. Escape pauses or resumes. Enter starts/restarts. Low striped barriers can be jumped; elevated striped barriers can be slid under. Gold ramps let you run onto train roofs. Roof-launched jumps have a longer arc, allowing diagonal jumps across a short gap to an approaching train. Running off a roof drops you back to the tracks. Frontal impacts are fatal. The first lateral impact bounces the runner back and starts a ten-second warning window; another lateral impact during that window ends the run. Coins add 10 points each, and every meter adds one point.
 
 ## Build and verify
 

@@ -41,7 +41,22 @@ for (const [name, engine] of [['chromium', chromium], ['firefox', firefox]].filt
   await page.keyboard.press('Escape');
   if (process.env.SCREENSHOTS) await page.screenshot({ timeout: 60000, path: `/tmp/railrush-${name}-playing.png` });
   await page.locator('#continue').click();
-  await page.evaluate(() => window[Symbol.for('railrush.game')].crash());
+  await page.evaluate(() => {
+    const game = window[Symbol.for('railrush.game')];
+    const lane = game.lane === 1 ? 0 : game.lane + 1;
+    game.entities = [{ id: 9001, kind: 'train', lane, z: 0, y: 0, extra: -game.speed, length: 28 }];
+    game.move(lane - game.lane);
+    for (let step = 0; step < 20; step++) game.update(1 / 120);
+  });
+  assert.equal(await page.evaluate(() => window[Symbol.for('railrush.game')].phase), 'playing');
+  assert.ok(await page.evaluate(() => window[Symbol.for('railrush.game')].bonkWindow) > 0);
+  await page.evaluate(() => {
+    const game = window[Symbol.for('railrush.game')];
+    const lane = game.lane === 1 ? 0 : game.lane + 1;
+    game.entities = [{ id: 9002, kind: 'low', lane, z: 0, y: 0, extra: -game.speed, length: .65 }];
+    game.move(lane - game.lane);
+    for (let step = 0; step < 20; step++) game.update(1 / 120);
+  });
   await page.locator('#modal-title').filter({ hasText: 'What a ride.' }).waitFor({ timeout: 20000 });
   assert.equal(await page.locator('#modal-title').textContent(), 'What a ride.');
   assert.equal(await page.locator('#modal').isVisible(), true);

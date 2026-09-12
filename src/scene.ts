@@ -227,7 +227,7 @@ export class World {
     this.runner.position.set(game.x, game.y, 0);
     this.body.scale.y = game.slide > 0 ? .35 : 1;
     this.body.position.y = moving && game.grounded && game.slide === 0 ? Math.sin(game.distance * 1.4) * .045 : 0;
-    this.body.rotation.z = (game.x - game.lane * 3) * .08;
+    this.body.rotation.z = (game.x - game.lane * 3) * .08 + (game.bonkFlash > 0 ? Math.sin(game.bonkFlash * 75) * .16 : 0);
     for (let i = 0; i < this.limbs.length; i++) this.limbs[i].rotation.x = moving ? Math.sin(game.distance * 1.3 + (i < 2 ? 0 : Math.PI) + (i % 2 ? Math.PI : 0)) * .6 : 0;
     this.cameraHeight += (Math.min(game.y, ROOF_HEIGHT) - this.cameraHeight) * .07;
     const nearTunnel = this.landmarks.some(l => l.type === 'tunnel' && Math.abs(l.group.position.z) < l.length / 2 + 22);

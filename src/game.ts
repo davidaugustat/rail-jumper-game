@@ -7,6 +7,7 @@ export type Phase = 'ready' | 'playing' | 'paused' | 'over';
 export const LANE_WIDTH = 3;
 export const SLIDE_TIME = .8;
 export const JUMP_SPEED = 9;
+export const ROOF_JUMP_SPEED = 11.5;
 export const GRAVITY = 24;
 export const START_SPEED = 18;
 export const MAX_SPEED = 30;
@@ -14,6 +15,7 @@ export const STEP = 1 / 120;
 export const ROOF_HEIGHT = 3.28;
 export const RAMP_LENGTH = 10;
 export const GENERATION_DISTANCE = 650;
+export const BONK_WINDOW = 10;
 const ACCELERATION = .15;
 
 // Integrate the speed curve so oncoming trains can be placed far away while
@@ -26,23 +28,32 @@ export interface Route { time: number; safe: number; rooftop: boolean }
 export class Game {
   phase: Phase = 'ready'; lane = 0; x = 0; y = 0; vy = 0; slide = 0;
   grounded = true; pendingSlide = false;
+  moveOrigin = 0; bonkWindow = 0; bonkFlash = 0;
   distance = 0; coins = 0; elapsed = 0; entities: Entity[] = []; nextId = 0;
   nextEncounter = 3; row = 0; safeLane = 0; routes: Route[] = [];
   lastTrainLane: number | undefined;
-  onEvent: (event: 'jump' | 'coin' | 'crash') => void = () => {};
+  onEvent: (event: 'jump' | 'coin' | 'bonk' | 'crash') => void = () => {};
   constructor(public random: () => number = Math.random) {}
   get speed() { return Math.min(MAX_SPEED, START_SPEED + this.elapsed * ACCELERATION); }
   get score() { return Math.floor(this.distance) + this.coins * 10; }
   start() {
     this.phase = 'playing'; this.lane = this.x = this.y = this.vy = this.slide = this.distance = this.coins = this.elapsed = this.nextId = this.row = this.safeLane = 0;
-    this.grounded = true; this.pendingSlide = false; this.entities = []; this.routes = []; this.nextEncounter = 3; this.lastTrainLane = undefined;
+    this.grounded = true; this.pendingSlide = false; this.moveOrigin = 0; this.bonkWindow = this.bonkFlash = 0;
+    this.entities = []; this.routes = []; this.nextEncounter = 3; this.lastTrainLane = undefined;
     this.generateAhead();
   }
-  move(direction: number) { if (this.phase === 'playing') this.lane = Math.max(-1, Math.min(1, this.lane + direction)); }
+  move(direction: number) {
+    if (this.phase !== 'playing') return;
+    const next = Math.max(-1, Math.min(1, this.lane + direction));
+    if (next !== this.lane) { this.moveOrigin = this.lane; this.lane = next; }
+  }
   jump() {
     if (this.phase !== 'playing') return;
     this.slide = 0; this.pendingSlide = false;
-    if (this.grounded) { this.grounded = false; this.vy = JUMP_SPEED; this.onEvent('jump'); }
+    if (this.grounded) {
+      const launchedFromRoof = this.y >= ROOF_HEIGHT - .08;
+      this.grounded = false; this.vy = launchedFromRoof ? ROOF_JUMP_SPEED : JUMP_SPEED; this.onEvent('jump');
+    }
   }
   duck() {
     if (this.phase !== 'playing') return;
@@ -121,6 +132,8 @@ export class Game {
     this.x += Math.max(-18 * dt, Math.min(18 * dt, this.lane * LANE_WIDTH - this.x));
     this.y += this.vy * dt - .5 * GRAVITY * dt * dt; this.vy -= GRAVITY * dt;
     this.slide = Math.max(0, this.slide - dt);
+    this.bonkWindow = Math.max(0, this.bonkWindow - dt);
+    this.bonkFlash = Math.max(0, this.bonkFlash - dt);
     let floor = 0;
     for (const e of this.entities) {
       const prevZ = e.z; e.z -= travel + e.extra * dt;
@@ -142,9 +155,17 @@ export class Game {
       const half = e.length / 2 + .28;
       const nearZ = e.z <= half && prevZ >= -half;
       const nearX = Math.min(oldX, this.x) < e.lane * LANE_WIDTH + 1.35 && Math.max(oldX, this.x) > e.lane * LANE_WIDTH - 1.35;
+      const centerX = e.lane * LANE_WIDTH;
+      const oldNearX = Math.abs(oldX - centerX) < 1.35;
+      const nowNearX = Math.abs(this.x - centerX) < 1.35;
+      const enteredFromSide = !oldNearX && nowNearX && Math.abs(this.x - oldX) > .001;
       if (e.kind === 'train' && e.ramp) {
         const rampHeight = this.surface(e);
-        if (rampHeight !== undefined && this.y < rampHeight - .12) { this.crash(); break; }
+        const besideRamp = prevZ > e.length / 2 && prevZ < e.length / 2 + RAMP_LENGTH;
+        const enteredRampSide = Math.abs(oldX - centerX) >= 1.18 && Math.abs(this.x - centerX) < 1.18;
+        if (rampHeight !== undefined && this.y < rampHeight - .12) {
+          this.impact(enteredRampSide && besideRamp); break;
+        }
       }
       if (!nearZ || !nearX) continue;
       if (e.kind === 'coin') {
@@ -154,12 +175,21 @@ export class Game {
         const hitTrain = e.kind === 'train' && this.y < ROOF_HEIGHT - .08 && !(e.ramp && e.z > e.length / 2);
         const hitLow = e.kind === 'low' && this.y < e.y + .95 && head > e.y;
         const hitHigh = e.kind === 'high' && head > e.y + 1.05 && this.y < e.y + 2.6;
-        if (hitTrain || hitLow || hitHigh) { this.crash(); break; }
+        if (hitTrain || hitLow || hitHigh) {
+          const alreadyAlongside = prevZ < half && prevZ > -half;
+          this.impact(enteredFromSide && alreadyAlongside); break;
+        }
       }
     }
     this.entities = this.entities.filter(e => e.z > -e.length / 2 - 20);
     this.routes = this.routes.filter(r => r.time > this.elapsed - 5);
     if (this.phase === 'playing') this.generateAhead();
+  }
+  impact(lateral: boolean) {
+    if (!lateral || this.bonkWindow > 0) { this.crash(); return; }
+    this.bonkWindow = BONK_WINDOW; this.bonkFlash = .45;
+    this.lane = this.moveOrigin; this.x = this.moveOrigin * LANE_WIDTH;
+    this.onEvent('bonk');
   }
   crash() { this.phase = 'over'; this.onEvent('crash'); }
 }

@@ -10,7 +10,7 @@ import { Game, STEP } from './game';
 import { World } from './scene';
 import { Sound } from './audio';
 const pauseIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
-const soundIcon = (muted: boolean) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4.5v10.1a3.5 3.5 0 1 1-2-3.16V7.1l7-1.7v6.2a3.5 3.5 0 1 1-2-3.16V3z"/>${muted ? '<path class="mute-stroke" d="M3 3l18 18"/>' : ''}</svg>`;
+const soundIcon = (muted: boolean) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="note-stroke" d="M9 17.5V7l10-2v10.5M9 10l10-2"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>${muted ? '<path class="mute-stroke" d="M3 3l18 18"/>' : ''}</svg>`;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <main class="game-frame"><canvas id="scene" aria-label="3D railway running game"></canvas><div class="vignette"></div>
@@ -72,6 +72,7 @@ function frame(now: number) {
   const dt = Math.min((now - previous) / 1000, .1); previous = now;
   if (game.phase === 'playing') { accumulator += dt; while (accumulator >= STEP) { game.update(STEP); accumulator -= STEP; } } else accumulator = 0;
   $('score').textContent = String(game.score).padStart(5, '0'); $('coins').textContent = String(game.coins);
+  app.classList.toggle('bonked', game.bonkFlash > 0);
   world.render(game, game.elapsed); requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

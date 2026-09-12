@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Game, STEP, MAX_SPEED, ROOF_HEIGHT, RAMP_LENGTH, GENERATION_DISTANCE, distanceAt, type Entity, type Kind } from './game';
+import { Game, STEP, MAX_SPEED, ROOF_HEIGHT, ROOF_JUMP_SPEED, RAMP_LENGTH, GENERATION_DISTANCE, BONK_WINDOW, distanceAt, type Entity, type Kind } from './game';
 function clean() { const g = new Game(() => .5); g.start(); g.entities = []; g.routes = []; g.nextEncounter = 1e9; return g; }
 function tick(g: Game, seconds: number) { for (let i = 0; i < Math.round(seconds / STEP); i++) g.update(STEP); }
 function obstacle(kind: Kind, z = 0, lane = 0, extra = 0): Entity { return { id: 1, kind, z, lane, y: kind === 'coin' ? 1 : 0, extra, length: kind === 'train' ? 28 : .65 }; }
@@ -12,7 +12,7 @@ describe('runner mechanics', () => {
   it.each(['low', 'high', 'train'] as Kind[])('ends the run on a ground collision with %s', kind => { const g = clean(); g.entities = [obstacle(kind)]; tick(g, STEP); expect(g.phase).toBe('over'); const score = g.score; tick(g, 1); expect(g.score).toBe(score); });
   it('clears low barriers by jumping and high barriers by sliding', () => { const g = clean(); g.jump(); tick(g, .3); g.entities = [obstacle('low')]; tick(g, STEP); expect(g.phase).toBe('playing'); const s = clean(); s.duck(); s.entities = [obstacle('high')]; tick(s, STEP); expect(s.phase).toBe('playing'); });
   it('cannot jump through train sides or slide through low barriers', () => { const g = clean(); g.jump(); tick(g, .3); g.entities = [obstacle('train')]; tick(g, STEP); expect(g.phase).toBe('over'); const s = clean(); s.duck(); s.entities = [obstacle('low')]; tick(s, STEP); expect(s.phase).toBe('over'); });
-  it('detects fast crossing and collisions during lane transitions', () => { const g = clean(); g.entities = [obstacle('low', 1, 0, 1000)]; tick(g, STEP); expect(g.phase).toBe('over'); const s = clean(); s.move(1); tick(s, .12); s.entities = [obstacle('train', 0, 1)]; tick(s, STEP); expect(s.phase).toBe('over'); });
+  it('detects a fast frontal crossing', () => { const g = clean(); g.entities = [obstacle('low', 1, 0, 1000)]; tick(g, STEP); expect(g.phase).toBe('over'); });
   it('collects coins once and scores distance plus ten per coin', () => { const g = clean(); g.entities = [obstacle('coin')]; tick(g, .1); expect(g.coins).toBe(1); expect(g.score).toBe(Math.floor(g.distance) + 10); });
   it('freezes on pause and resets rooftop and cancellation state on restart', () => { const g = clean(); tick(g, 1); g.pause(); const d = g.distance; g.jump(); g.move(1); g.duck(); tick(g, 2); expect(g.distance).toBe(d); expect(g.lane).toBe(0); g.resume(); tick(g,.1); expect(g.distance).toBeGreaterThan(d); g.y = ROOF_HEIGHT; g.pendingSlide = true; g.start(); expect([g.distance,g.coins,g.x,g.y,g.slide,g.elapsed]).toEqual([0,0,0,0,0,0]); expect(g.grounded).toBe(true); expect(g.pendingSlide).toBe(false); expect(g.entities.length).toBeGreaterThan(0); });
   it('produces identical simulation at different rendering frame rates', () => {
@@ -28,12 +28,17 @@ describe('ramps and moving train roofs', () => {
     for (let i = 0; i < 160; i++) { g.update(STEP); expect(g.phase).toBe('playing'); if (g.y > 0) climbed = true; if (g.y === ROOF_HEIGHT) break; expect(g.y).toBeGreaterThanOrEqual(previousY); previousY = g.y; }
     expect(climbed).toBe(true); expect(g.y).toBe(ROOF_HEIGHT); expect(g.grounded).toBe(true);
   });
-  it('cannot enter the high side of a ramp from ground level', () => { const g = clean(); g.entities = [{ ...obstacle('train',17,1), ramp:true }]; g.move(1); tick(g,.17); expect(g.phase).toBe('over'); });
+  it('bonks and bounces back when entering the high side of a ramp', () => { const g = clean(); g.entities = [{ ...obstacle('train',17,1,-18), ramp:true }]; g.move(1); tick(g,.17); expect(g.phase).toBe('playing'); expect(g.lane).toBe(0); expect(g.bonkWindow).toBeGreaterThan(0); });
   it('jumps from a stationary roof onto an adjacent passing train', () => {
     const g = clean(); g.y = ROOF_HEIGHT;
-    g.entities = [obstacle('train',0), {...obstacle('train',6,1,8),id:2,length:34}];
+    g.entities = [obstacle('train',0), {...obstacle('train',19,1,8),id:2,length:34}];
     g.jump(); g.move(1); tick(g,.77);
-    expect(g.phase).toBe('playing'); expect(g.x).toBe(3); expect(g.y).toBe(ROOF_HEIGHT); expect(g.grounded).toBe(true);
+    expect(g.phase).toBe('playing'); expect(g.x).toBe(3); expect(g.y).toBeGreaterThan(ROOF_HEIGHT); expect(g.grounded).toBe(false);
+    tick(g,.2); expect(g.y).toBe(ROOF_HEIGHT); expect(g.grounded).toBe(true);
+  });
+  it('gives roof jumps a longer arc than ground jumps', () => {
+    const ground = clean(); ground.jump(); expect(ground.vy).toBeLessThan(ROOF_JUMP_SPEED); tick(ground,.8); expect(ground.grounded).toBe(true);
+    const roof = clean(); roof.y = ROOF_HEIGHT; roof.jump(); expect(roof.vy).toBe(ROOF_JUMP_SPEED); tick(roof,.8); expect(roof.y).toBeGreaterThan(ROOF_HEIGHT); expect(roof.grounded).toBe(false);
   });
   it('fast-drops onto a roof and can jump out of the resulting slide', () => {
     const g = clean(); g.y = ROOF_HEIGHT; g.entities = [obstacle('train',6)]; g.jump(); tick(g,.2); g.duck(); tick(g,.2); expect(g.y).toBe(ROOF_HEIGHT); expect(g.slide).toBeGreaterThan(0); g.jump(); tick(g,.1); expect(g.y).toBeGreaterThan(ROOF_HEIGHT); expect(g.slide).toBe(0);
@@ -41,6 +46,25 @@ describe('ramps and moving train roofs', () => {
   it('falls back to the tracks after running off a roof', () => { const g = clean(); g.y = ROOF_HEIGHT; g.entities = [obstacle('train',-13)]; tick(g,.75); expect(g.phase).toBe('playing'); expect(g.y).toBe(0); expect(g.grounded).toBe(true); });
   it('collects roof coins and passes above ground barriers', () => { const g = clean(); g.y = ROOF_HEIGHT; g.entities = [obstacle('train',0),{...obstacle('coin'),id:2,y:ROOF_HEIGHT+.9},{...obstacle('high'),id:3}]; tick(g,STEP); expect(g.phase).toBe('playing'); expect(g.coins).toBe(1); });
   it('does not teleport a falling player through a train body onto its roof', () => { const g = clean(); g.y = 2; g.grounded = false; g.vy = -2; g.entities = [obstacle('train')]; tick(g,STEP); expect(g.phase).toBe('over'); });
+});
+describe('lateral bonks', () => {
+  function sideHit(game: Game, kind: 'train' | 'low' = 'train') {
+    game.entities = [obstacle(kind, 0, 1, -game.speed)]; game.move(1); tick(game,.12);
+  }
+  it.each(['train','low'] as const)('survives the first side impact with a %s and bounces back', kind => {
+    const g = clean(); let event = ''; g.onEvent = value => { event = value; }; sideHit(g,kind);
+    expect(g.phase).toBe('playing'); expect(g.lane).toBe(0); expect(g.x).toBe(0); expect(g.bonkWindow).toBeGreaterThan(BONK_WINDOW-.2); expect(g.bonkFlash).toBeGreaterThan(0); expect(event).toBe('bonk');
+  });
+  it('ends the run on a second side impact during the ten-second window', () => {
+    const g = clean(); sideHit(g); expect(g.phase).toBe('playing'); sideHit(g,'low'); expect(g.phase).toBe('over');
+  });
+  it('allows another warning after ten seconds without a side impact', () => {
+    const g = clean(); sideHit(g); g.entities=[]; tick(g,BONK_WINDOW+.1); expect(g.bonkWindow).toBe(0); sideHit(g); expect(g.phase).toBe('playing'); expect(g.bonkWindow).toBeGreaterThan(0);
+  });
+  it('still ends immediately on a frontal impact during or outside the warning window', () => {
+    const g = clean(); sideHit(g); g.entities=[obstacle('train')]; tick(g,STEP); expect(g.phase).toBe('over');
+    const fresh = clean(); fresh.entities=[obstacle('low')]; tick(fresh,STEP); expect(fresh.phase).toBe('over');
+  });
 });
 describe('denser, distant obstacle generation', () => {
   it('prefills the horizon with train-heavy mixed rows and paired rooftop routes', () => {
