@@ -105,11 +105,6 @@ canvas {
   color: #ffce72;
   font-size: 29px;
 }
-.brand-dot {
-  align-self: flex-start;
-  margin: 4px 0 0 -6px;
-  font-size: 10px;
-}
 
 .icon-button {
   display: grid;
