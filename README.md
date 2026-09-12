@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. Arrow left/right change tracks, up jumps (and cancels a slide), and down slides or cuts a jump short with a fast drop. A fast drop starts a slide on landing, including on train roofs. Escape pauses or resumes. Enter starts/restarts. Low striped barriers can be jumped; elevated striped barriers can be slid under. Gold ramps let you run onto train roofs. Roof-launched jumps have a longer arc, allowing diagonal jumps across a short gap to an approaching train. Running off a roof drops you back to the tracks. Frontal impacts are fatal. The first lateral impact bounces the runner back and starts a ten-second warning window; another lateral impact during that window ends the run. Coins add 10 points each, and every meter adds one point.
+Open the local URL printed by Vite. Arrow left/right change tracks, up jumps (and cancels a slide), and down slides or cuts a jump short with a fast drop. On a phone or tablet, swipe in those same four directions anywhere on the game view. A fast drop starts a slide on landing, including on train roofs. Escape pauses or resumes. Enter starts/restarts. Low striped barriers can be jumped; elevated striped barriers can be slid under. Gold ramps let you run onto train roofs. Roof-launched jumps have a longer arc, allowing diagonal jumps across a short gap to an approaching train. Running off a roof drops you back to the tracks. Frontal impacts are fatal. The first lateral impact bounces the runner back and starts a ten-second warning window; another lateral impact during that window ends the run. Coins add 10 points each, and every meter adds one point.
 
 ## Build and verify
 
@@ -27,7 +27,7 @@ npm run preview
 
 Upload the contents of `dist/` to a static host. There is no application server, database, runtime API, or account system. Local development and preview use Vite to serve static frontend files. Best score and mute preference use localStorage when available. Browser audio starts only following player interaction.
 
-Desktop browsers with WebGL 2 and hardware acceleration are required. Models and sounds are generated locally. Difficulty rises from 18 to 30 meters/second. Train-heavy mixed rows pair one train with one barrier, and every third encounter adds a longer stationary ramp train beside a passing train. Each section preserves a reachable ground route; roof routes offer extra coins. Obstacles are generated 650 meters ahead, fog fades from 220 to 560 meters, and the 800-meter scenery loop includes enclosed tunnels and a truss bridge over water. A fixed 120 Hz simulation, instanced scenery, merged models, and recycled objects keep the longer view bounded.
+A current desktop or mobile browser with WebGL 2 and hardware acceleration is required. The portrait layout supports screens down to 320 × 568 pixels. Models and sounds are generated locally. Difficulty rises from 18 to 30 meters/second. Train-heavy mixed rows pair one train with one barrier, and every third encounter adds a longer stationary ramp train beside a passing train. Each section preserves a reachable ground route; roof routes offer extra coins. Obstacles are generated 650 meters ahead, fog fades from 220 to 560 meters, and the 800-meter scenery loop includes enclosed tunnels and a truss bridge over water. A fixed 120 Hz simulation, instanced scenery, merged models, and recycled objects keep the longer view bounded.
 
 ## Structure
 
@@ -47,6 +47,6 @@ npm run test:browser
 npm run test:rooftops
 ```
 
-The Chromium tests exercise keyboard input, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railjumper-chromium-*.png`. Fonts are bundled with the application; no external asset requests are required.
+The Chromium tests exercise keyboard and swipe input, portrait layouts, pause, collisions, restart, focus loss, persisted settings, and resizing. Set `SCREENSHOTS=1` to capture screenshots under `/tmp/railjumper-chromium-*.png`. Fonts are bundled with the application; no external asset requests are required.
 
 The rooftop browser test renders ramp climbs, jumps to passing trains, tunnels and the river bridge, and verifies the distant generation and model budget. `SCREENSHOTS=1 npm run test:rooftops` captures those scenes under `/tmp/railjumper-*.png`.
