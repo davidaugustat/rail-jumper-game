@@ -10,7 +10,8 @@ import { Game, STEP } from './game';
 import { World } from './scene';
 import { Sound } from './audio';
 const pauseIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
-const soundIcon = (muted: boolean) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="note-stroke" d="M9 17.5V7l10-2v10.5M9 10l10-2"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>${muted ? '<path class="mute-stroke" d="M3 3l18 18"/>' : ''}</svg>`;
+const soundIcon = (muted: boolean) =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="note-stroke" d="M9 17.5V7l10-2v10.5M9 10l10-2"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>${muted ? '<path class="mute-stroke" d="M3 3l18 18"/>' : ''}</svg>`;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <main class="game-frame"><canvas id="scene" aria-label="3D railway running game"></canvas><div class="vignette"></div>
@@ -23,56 +24,167 @@ app.innerHTML = `
 </main>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let world: World;
-try { world = new World($<HTMLCanvasElement>('scene')); }
-catch { $('welcome').innerHTML = '<h1>A small detour.</h1><p>This game needs WebGL 2 graphics support. Please try a current desktop browser with hardware acceleration enabled.</p>'; throw new Error('WebGL initialization failed'); }
-const game = new Game(), sound = new Sound();
+try {
+  world = new World($<HTMLCanvasElement>('scene'));
+} catch {
+  $('welcome').innerHTML =
+    '<h1>A small detour.</h1><p>This game needs WebGL 2 graphics support. Please try a current desktop browser with hardware acceleration enabled.</p>';
+  throw new Error('WebGL initialization failed');
+}
+const game = new Game(),
+  sound = new Sound();
 (window as unknown as Record<symbol, Game>)[Symbol.for('railrush.game')] = game;
 game.entities = [
   { id: -1, kind: 'train', lane: 1, z: 35, y: 0, extra: 0, length: 28, ramp: true },
   { id: -2, kind: 'train', lane: 0, z: 55, y: 0, extra: 8, length: 34 },
-  { id: -3, kind: 'low', lane: -1, z: 33, y: 0, extra: 0, length: .65 },
-  ...Array.from({ length: 7 }, (_, i) => ({ id: -4 - i, kind: 'coin' as const, lane: 0, z: 5 + i * 2, y: 1, extra: 0, length: .4 })),
+  { id: -3, kind: 'low', lane: -1, z: 33, y: 0, extra: 0, length: 0.65 },
+  ...Array.from({ length: 7 }, (_, i) => ({
+    id: -4 - i,
+    kind: 'coin' as const,
+    lane: 0,
+    z: 5 + i * 2,
+    y: 1,
+    extra: 0,
+    length: 0.4,
+  })),
 ];
-function read(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
-function save(key: string, value: string) { try { localStorage.setItem(key, value); } catch {} }
+function read(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function save(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Persistence is optional when browser storage is unavailable.
+  }
+}
 let best = Math.max(0, Number(read('railrush-best')) || 0);
 sound.muted = read('railrush-muted') === 'true';
 $('welcome-best').innerHTML = `${best.toLocaleString()} <small>PTS</small>`;
-function soundButton() { $('sound').innerHTML = soundIcon(sound.muted); $('sound').setAttribute('aria-label', sound.muted ? 'Unmute sound' : 'Mute sound'); $('sound').title = sound.muted ? 'Unmute sound' : 'Mute sound'; $('sound').setAttribute('aria-pressed', String(sound.muted)); }
+function soundButton() {
+  $('sound').innerHTML = soundIcon(sound.muted);
+  $('sound').setAttribute('aria-label', sound.muted ? 'Unmute sound' : 'Mute sound');
+  $('sound').title = sound.muted ? 'Unmute sound' : 'Mute sound';
+  $('sound').setAttribute('aria-pressed', String(sound.muted));
+}
 soundButton();
-$('sound').onclick = () => { sound.unlock(); sound.muted = !sound.muted; save('railrush-muted', String(sound.muted)); soundButton(); };
+$('sound').onclick = () => {
+  sound.unlock();
+  sound.muted = !sound.muted;
+  save('railrush-muted', String(sound.muted));
+  soundButton();
+};
 function start() {
-  sound.unlock(); game.start(); $('welcome').hidden = true; $('scene-sticker').hidden = true; $('modal').hidden = true; $('hud').hidden = false;
+  sound.unlock();
+  game.start();
+  $('welcome').hidden = true;
+  $('scene-sticker').hidden = true;
+  $('modal').hidden = true;
+  $('hud').hidden = false;
   app.classList.add('playing');
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }
 function showPause() {
   if (game.phase !== 'playing') return;
-  game.pause(); app.classList.remove('playing'); $('modal').hidden = false; $('modal-eyebrow').textContent = 'TAKE A BREATHER'; $('modal-title').textContent = 'On a break.'; $('modal-copy').textContent = 'Your next adventure can wait a moment.'; $('results').hidden = true; $('record').textContent = ''; $('restart').hidden = false; $('continue').innerHTML = 'KEEP RUNNING <span>→</span>'; $('continue').focus();
+  game.pause();
+  app.classList.remove('playing');
+  $('modal').hidden = false;
+  $('modal-eyebrow').textContent = 'TAKE A BREATHER';
+  $('modal-title').textContent = 'On a break.';
+  $('modal-copy').textContent = 'Your next adventure can wait a moment.';
+  $('results').hidden = true;
+  $('record').textContent = '';
+  $('restart').hidden = false;
+  $('continue').innerHTML = 'KEEP RUNNING <span>→</span>';
+  $('continue').focus();
 }
-function resume() { game.resume(); app.classList.add('playing'); $('modal').hidden = true; if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); }
+function resume() {
+  game.resume();
+  app.classList.add('playing');
+  $('modal').hidden = true;
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
 function end() {
-  const newBest = game.score > best; best = Math.max(best, game.score); save('railrush-best', String(best));
-  app.classList.remove('playing'); $('modal').hidden = false; $('modal-eyebrow').textContent = 'END OF THE LINE. FOR NOW.'; $('modal-title').textContent = 'What a ride.'; $('modal-copy').textContent = 'Shake it off. There’s another run in you.'; $('results').hidden = false; $('final-score').textContent = game.score.toLocaleString(); $('final-distance').textContent = `${Math.floor(game.distance)}m`; $('final-coins').textContent = String(game.coins); $('record').textContent = newBest ? `✦ NEW PERSONAL BEST · ${best.toLocaleString()} PTS` : `PERSONAL BEST · ${best.toLocaleString()} PTS`; $('continue').innerHTML = 'RUN IT BACK <span>↗</span>'; $('restart').hidden = true; $('continue').focus();
+  const newBest = game.score > best;
+  best = Math.max(best, game.score);
+  save('railrush-best', String(best));
+  app.classList.remove('playing');
+  $('modal').hidden = false;
+  $('modal-eyebrow').textContent = 'END OF THE LINE. FOR NOW.';
+  $('modal-title').textContent = 'What a ride.';
+  $('modal-copy').textContent = 'Shake it off. There’s another run in you.';
+  $('results').hidden = false;
+  $('final-score').textContent = game.score.toLocaleString();
+  $('final-distance').textContent = `${Math.floor(game.distance)}m`;
+  $('final-coins').textContent = String(game.coins);
+  $('record').textContent = newBest
+    ? `✦ NEW PERSONAL BEST · ${best.toLocaleString()} PTS`
+    : `PERSONAL BEST · ${best.toLocaleString()} PTS`;
+  $('continue').innerHTML = 'RUN IT BACK <span>↗</span>';
+  $('restart').hidden = true;
+  $('continue').focus();
 }
-game.onEvent = event => { sound.play(event); if (event === 'crash') end(); };
-$('start').onclick = start; $('pause').onclick = showPause; $('restart').onclick = start;
-$('continue').onclick = () => game.phase === 'paused' ? resume() : start();
-window.addEventListener('keydown', e => {
+game.onEvent = (event) => {
+  sound.play(event);
+  if (event === 'crash') end();
+};
+$('start').onclick = start;
+$('pause').onclick = showPause;
+$('restart').onclick = start;
+$('continue').onclick = () => (game.phase === 'paused' ? resume() : start());
+window.addEventListener('keydown', (e) => {
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Enter'].includes(e.key)) {
     if (e.key === 'Enter' && document.activeElement instanceof HTMLButtonElement) return;
-    e.preventDefault(); if (e.repeat) return;
-    switch (e.key) { case 'ArrowLeft': game.move(-1); break; case 'ArrowRight': game.move(1); break; case 'ArrowUp': game.jump(); break; case 'ArrowDown': game.duck(); break; case 'Escape': game.phase === 'paused' ? resume() : showPause(); break; case 'Enter': if (game.phase === 'ready' || game.phase === 'over') start(); else if (game.phase === 'paused') resume(); }
+    e.preventDefault();
+    if (e.repeat) return;
+    switch (e.key) {
+      case 'ArrowLeft':
+        game.move(-1);
+        break;
+      case 'ArrowRight':
+        game.move(1);
+        break;
+      case 'ArrowUp':
+        game.jump();
+        break;
+      case 'ArrowDown':
+        game.duck();
+        break;
+      case 'Escape':
+        if (game.phase === 'paused') resume();
+        else showPause();
+        break;
+      case 'Enter':
+        if (game.phase === 'ready' || game.phase === 'over') start();
+        else if (game.phase === 'paused') resume();
+    }
   }
 });
-window.addEventListener('blur', showPause); document.addEventListener('visibilitychange', () => { if (document.hidden) showPause(); });
+window.addEventListener('blur', showPause);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) showPause();
+});
 window.addEventListener('resize', () => world.resize());
-let previous = performance.now(), accumulator = 0;
+let previous = performance.now(),
+  accumulator = 0;
 function frame(now: number) {
-  const dt = Math.min((now - previous) / 1000, .1); previous = now;
-  if (game.phase === 'playing') { accumulator += dt; while (accumulator >= STEP) { game.update(STEP); accumulator -= STEP; } } else accumulator = 0;
-  $('score').textContent = String(game.score).padStart(5, '0'); $('coins').textContent = String(game.coins);
+  const dt = Math.min((now - previous) / 1000, 0.1);
+  previous = now;
+  if (game.phase === 'playing') {
+    accumulator += dt;
+    while (accumulator >= STEP) {
+      game.update(STEP);
+      accumulator -= STEP;
+    }
+  } else accumulator = 0;
+  $('score').textContent = String(game.score).padStart(5, '0');
+  $('coins').textContent = String(game.coins);
   app.classList.toggle('bonked', game.bonkFlash > 0);
-  world.render(game, game.elapsed); requestAnimationFrame(frame);
+  world.render(game, game.elapsed);
+  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
