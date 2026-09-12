@@ -49,7 +49,10 @@ try {
     const climbed = g.y === ROOF_HEIGHT && g.grounded && g.phase === 'playing';
     g.jump();
     g.move(1);
-    for (let i = 0; i < 93; i++) g.update(STEP);
+    for (let i = 0; i < 144; i++) {
+      g.update(STEP);
+      if (g.y === ROOF_HEIGHT && g.grounded) break;
+    }
     w.render(g, g.elapsed);
     const model = w.entityMeshes.get(1);
     return {

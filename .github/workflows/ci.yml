@@ -32,7 +32,7 @@ jobs:
 
       - name: Run browser test suites
         run: |
-          npm run preview -- --host 127.0.0.1 --port 5173 > /tmp/railrush-vite.log 2>&1 &
+          npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/railrush-vite.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in {1..30}; do

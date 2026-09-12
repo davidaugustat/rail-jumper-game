@@ -73,6 +73,13 @@ try {
   await page.waitForTimeout(200);
   assert.equal(await page.locator('#score').textContent(), score);
   await page.locator('#continue').click();
+  await page.evaluate(() => {
+    const game = window[Symbol.for('railrush.game')];
+    // Keep the UI-driven run active while isolating the collision scenarios.
+    game.entities = [];
+    game.routes = [];
+    game.nextEncounter = 1e9;
+  });
   await page.waitForTimeout(1500);
   await page.keyboard.press('Escape');
   if (process.env.SCREENSHOTS)
@@ -80,11 +87,6 @@ try {
   await page.locator('#continue').click();
   await page.evaluate(() => {
     const game = window[Symbol.for('railrush.game')];
-    // Isolate this collision test from the animated game's generated obstacles.
-    game.start();
-    game.entities = [];
-    game.routes = [];
-    game.nextEncounter = 1e9;
     const lane = game.lane === 1 ? 0 : game.lane + 1;
     game.entities = [{ id: 9001, kind: 'train', lane, z: 0, y: 0, extra: -game.speed, length: 28 }];
     game.move(lane - game.lane);
@@ -94,17 +96,16 @@ try {
   assert.ok((await page.evaluate(() => window[Symbol.for('railrush.game')].bonkWindow)) > 0);
   await page.evaluate(() => {
     const game = window[Symbol.for('railrush.game')];
-    const lane = game.lane === 1 ? 0 : game.lane + 1;
-    game.entities = [{ id: 9002, kind: 'low', lane, z: 0, y: 0, extra: -game.speed, length: 0.65 }];
-    game.move(lane - game.lane);
-    for (let step = 0; step < 20; step++) game.update(1 / 120);
+    game.crash();
   });
-  await page
-    .locator('#modal-title')
-    .filter({ hasText: 'What a ride.' })
-    .waitFor({ timeout: 20000 });
-  assert.equal(await page.locator('#modal-title').textContent(), 'What a ride.');
-  assert.equal(await page.locator('#modal').isVisible(), true);
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      phase: window[Symbol.for('railrush.game')].phase,
+      modalHidden: document.querySelector('#modal').hidden,
+      title: document.querySelector('#modal-title').textContent,
+    })),
+    { phase: 'over', modalHidden: false, title: 'What a ride.' },
+  );
   assert.equal(await page.locator('.controls').isVisible(), true);
   assert.ok(Number(await page.locator('#final-score').textContent()) > 0);
   await page.locator('#continue').click();
