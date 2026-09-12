@@ -8,6 +8,7 @@ export const LANE_WIDTH = 3;
 export const SLIDE_TIME = .8;
 export const JUMP_SPEED = 9;
 export const ROOF_JUMP_SPEED = 11.5;
+export const RAMP_JUMP_SPEED = 13;
 export const GRAVITY = 24;
 export const START_SPEED = 18;
 export const MAX_SPEED = 30;
@@ -29,6 +30,7 @@ export class Game {
   phase: Phase = 'ready'; lane = 0; x = 0; y = 0; vy = 0; slide = 0;
   grounded = true; pendingSlide = false;
   moveOrigin = 0; bonkWindow = 0; bonkFlash = 0;
+  rampAccessTrainId: number | undefined;
   distance = 0; coins = 0; elapsed = 0; entities: Entity[] = []; nextId = 0;
   nextEncounter = 3; row = 0; safeLane = 0; routes: Route[] = [];
   lastTrainLane: number | undefined;
@@ -39,7 +41,7 @@ export class Game {
   start() {
     this.phase = 'playing'; this.lane = this.x = this.y = this.vy = this.slide = this.distance = this.coins = this.elapsed = this.nextId = this.row = this.safeLane = 0;
     this.grounded = true; this.pendingSlide = false; this.moveOrigin = 0; this.bonkWindow = this.bonkFlash = 0;
-    this.entities = []; this.routes = []; this.nextEncounter = 3; this.lastTrainLane = undefined;
+    this.entities = []; this.routes = []; this.nextEncounter = 3; this.lastTrainLane = undefined; this.rampAccessTrainId = undefined;
     this.generateAhead();
   }
   move(direction: number) {
@@ -52,7 +54,14 @@ export class Game {
     this.slide = 0; this.pendingSlide = false;
     if (this.grounded) {
       const launchedFromRoof = this.y >= ROOF_HEIGHT - .08;
-      this.grounded = false; this.vy = launchedFromRoof ? ROOF_JUMP_SPEED : JUMP_SPEED; this.onEvent('jump');
+      const launchedFromRamp = this.entities.some(e => {
+        if (e.kind !== 'train' || !e.ramp || e.z <= e.length / 2 || e.z > e.length / 2 + RAMP_LENGTH) return false;
+        const surface = this.surface(e);
+        return surface !== undefined && Math.abs(this.y - surface) < .1;
+      });
+      this.grounded = false;
+      this.vy = launchedFromRamp ? RAMP_JUMP_SPEED : launchedFromRoof ? ROOF_JUMP_SPEED : JUMP_SPEED;
+      this.onEvent('jump');
     }
   }
   duck() {
@@ -135,19 +144,27 @@ export class Game {
     this.bonkWindow = Math.max(0, this.bonkWindow - dt);
     this.bonkFlash = Math.max(0, this.bonkFlash - dt);
     let floor = 0;
+    let support: Entity | undefined;
     for (const e of this.entities) {
       const prevZ = e.z; e.z -= travel + e.extra * dt;
       const surface = this.surface(e);
       if (surface === undefined) continue;
       const previousSurface = this.surface(e, oldX, prevZ);
+      // During a diagonal landing oldX may still be outside the ramp. Sample
+      // its previous height at the new x so a fast ramp cannot rise through
+      // the runner between fixed simulation steps.
+      const previousSurfaceAtNewX = this.surface(e, this.x, prevZ);
       const walking = wasGrounded && previousSurface !== undefined && Math.abs(oldY - previousSurface) < .08;
       const enteringRamp = wasGrounded && e.ramp && surface <= (travel + e.extra * dt) * ROOF_HEIGHT / RAMP_LENGTH + .08 && oldY < .08;
-      const landing = this.vy <= 0 && oldY >= surface - .035 && this.y <= surface;
-      if (walking || enteringRamp || landing) floor = Math.max(floor, surface);
+      const landingSurface = previousSurface ?? previousSurfaceAtNewX;
+      const landing = this.vy <= 0 && landingSurface !== undefined && oldY >= landingSurface - .035 && this.y <= surface;
+      if ((walking || enteringRamp || landing) && surface >= floor) { floor = surface; support = e; }
     }
     this.grounded = this.y <= floor && this.vy <= 0;
     if (this.grounded) {
       this.y = floor; this.vy = 0;
+      if (support?.kind === 'train' && support.ramp) this.rampAccessTrainId = support.id;
+      else if (floor === 0) this.rampAccessTrainId = undefined;
       if (this.pendingSlide) { this.slide = SLIDE_TIME; this.pendingSlide = false; }
     }
     for (const e of this.entities) {
@@ -163,7 +180,7 @@ export class Game {
         const rampHeight = this.surface(e);
         const besideRamp = prevZ > e.length / 2 && prevZ < e.length / 2 + RAMP_LENGTH;
         const enteredRampSide = Math.abs(oldX - centerX) >= 1.18 && Math.abs(this.x - centerX) < 1.18;
-        if (rampHeight !== undefined && this.y < rampHeight - .12) {
+        if (e.id !== this.rampAccessTrainId && rampHeight !== undefined && this.y < rampHeight - .12) {
           this.impact(enteredRampSide && besideRamp); break;
         }
       }
@@ -172,7 +189,7 @@ export class Game {
         if (Math.abs(this.x - e.lane * LANE_WIDTH) < .75 && Math.abs(this.y + (this.slide > 0 ? .45 : .9) - e.y) < .85) { e.z = -1000; this.coins++; this.onEvent('coin'); }
       } else {
         const head = this.y + (this.slide > 0 ? .65 : 1.7);
-        const hitTrain = e.kind === 'train' && this.y < ROOF_HEIGHT - .08 && !(e.ramp && e.z > e.length / 2);
+        const hitTrain = e.kind === 'train' && e.id !== this.rampAccessTrainId && this.y < ROOF_HEIGHT - .08 && !(e.ramp && e.z > e.length / 2);
         const hitLow = e.kind === 'low' && this.y < e.y + .95 && head > e.y;
         const hitHigh = e.kind === 'high' && head > e.y + 1.05 && this.y < e.y + 2.6;
         if (hitTrain || hitLow || hitHigh) {
@@ -182,6 +199,7 @@ export class Game {
       }
     }
     this.entities = this.entities.filter(e => e.z > -e.length / 2 - 20);
+    if (this.rampAccessTrainId !== undefined && !this.entities.some(e => e.id === this.rampAccessTrainId)) this.rampAccessTrainId = undefined;
     this.routes = this.routes.filter(r => r.time > this.elapsed - 5);
     if (this.phase === 'playing') this.generateAhead();
   }

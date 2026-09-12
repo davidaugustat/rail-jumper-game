@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Game, STEP, MAX_SPEED, ROOF_HEIGHT, ROOF_JUMP_SPEED, RAMP_LENGTH, GENERATION_DISTANCE, BONK_WINDOW, distanceAt, type Entity, type Kind } from './game';
+import { Game, STEP, MAX_SPEED, ROOF_HEIGHT, ROOF_JUMP_SPEED, RAMP_JUMP_SPEED, RAMP_LENGTH, GENERATION_DISTANCE, BONK_WINDOW, distanceAt, type Entity, type Kind } from './game';
 function clean() { const g = new Game(() => .5); g.start(); g.entities = []; g.routes = []; g.nextEncounter = 1e9; return g; }
 function tick(g: Game, seconds: number) { for (let i = 0; i < Math.round(seconds / STEP); i++) g.update(STEP); }
 function obstacle(kind: Kind, z = 0, lane = 0, extra = 0): Entity { return { id: 1, kind, z, lane, y: kind === 'coin' ? 1 : 0, extra, length: kind === 'train' ? 28 : .65 }; }
@@ -27,6 +27,32 @@ describe('ramps and moving train roofs', () => {
     let previousY = 0, climbed = false;
     for (let i = 0; i < 160; i++) { g.update(STEP); expect(g.phase).toBe('playing'); if (g.y > 0) climbed = true; if (g.y === ROOF_HEIGHT) break; expect(g.y).toBeGreaterThanOrEqual(previousY); previousY = g.y; }
     expect(climbed).toBe(true); expect(g.y).toBe(ROOF_HEIGHT); expect(g.grounded).toBe(true);
+  });
+  it.each([.1, 3, 7, 9.8])('jumps safely from %.1f meters up a ramp', rampProgress => {
+    const g = clean();
+    const train = { ...obstacle('train', 14 + RAMP_LENGTH - rampProgress), ramp: true };
+    g.entities = [train]; g.y = ROOF_HEIGHT * rampProgress / RAMP_LENGTH; g.grounded = true;
+    g.jump();
+    expect(g.vy).toBe(RAMP_JUMP_SPEED);
+    tick(g, 1.5);
+    expect(g.phase).toBe('playing');
+  });
+  it('lands diagonally on a ramp and crosses onto its roof without crashing', () => {
+    const g = clean();
+    const train = { ...obstacle('train', 18.3, 1, 8), ramp: true };
+    g.entities = [train];
+    g.x = 1.75; g.lane = 1; g.moveOrigin = 0;
+    g.y = 2.2; g.grounded = false; g.vy = -4;
+    let touchedRamp = false;
+    for (let i = 0; i < 180; i++) {
+      g.update(STEP);
+      expect(g.phase).toBe('playing');
+      if (g.grounded && g.y > 0 && g.y < ROOF_HEIGHT) touchedRamp = true;
+      if (touchedRamp && g.grounded && g.y === ROOF_HEIGHT) break;
+    }
+    expect(touchedRamp).toBe(true);
+    expect(g.y).toBe(ROOF_HEIGHT);
+    expect(g.rampAccessTrainId).toBe(train.id);
   });
   it('bonks and bounces back when entering the high side of a ramp', () => { const g = clean(); g.entities = [{ ...obstacle('train',17,1,-18), ramp:true }]; g.move(1); tick(g,.17); expect(g.phase).toBe('playing'); expect(g.lane).toBe(0); expect(g.bonkWindow).toBeGreaterThan(0); });
   it('jumps from a stationary roof onto an adjacent passing train', () => {
