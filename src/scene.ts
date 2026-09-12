@@ -40,8 +40,8 @@ export class World {
     const sun = new T.DirectionalLight(0xfff2ce, 3);
     sun.position.set(-15, 26, 12);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 24, bottom: -48, far: 90 });
+    sun.shadow.mapSize.set(4096, 4096);
+    Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 120, bottom: -300, far: 500 });
     sun.shadow.bias = -0.001;
     this.scene.add(sun);
     // The railway sits above the water; bridge sections expose the river below.
