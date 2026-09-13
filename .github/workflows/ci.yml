@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -60,6 +61,12 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+      - name: Upload GitHub Pages artifact
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -93,3 +100,20 @@ jobs:
           curl --fail --silent http://127.0.0.1:5173 > /dev/null
           npm run test:browser
           npm run test:rooftops
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/master'
+    needs: [format, lint, build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
