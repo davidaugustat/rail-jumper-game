@@ -43,6 +43,12 @@ try {
   await page.goto('http://localhost:5173');
   await page.locator('#start').waitFor();
   assert.equal(
+    await page
+      .locator('.brand-logo')
+      .evaluate((element) => element.complete && element.naturalWidth > 0),
+    true,
+  );
+  assert.equal(
     await page.locator('.game-frame').evaluate((element) => {
       const rect = element.getBoundingClientRect();
       return rect.width === innerWidth && rect.height === innerHeight;

@@ -12,10 +12,11 @@ import { Sound } from './audio';
 const pauseIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
 const soundIcon = (muted: boolean) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="note-stroke" d="M9 17.5V7l10-2v10.5M9 10l10-2"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>${muted ? '<path class="mute-stroke" d="M3 3l18 18"/>' : ''}</svg>`;
+const assetBaseUrl = import.meta.env.BASE_URL;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
 <main class="game-frame"><canvas id="scene" aria-label="3D railway running game"></canvas><div class="vignette"></div>
-<header class="topbar"><a class="brand" href="./" aria-label="RailJumper home"><img class="brand-logo" src="/railjumper-logo.png" width="52" height="52" alt="" /> RAILJUMPER</a><button id="sound" class="icon-button" aria-label="Mute sound" title="Mute sound"></button></header>
+<header class="topbar"><a class="brand" href="./" aria-label="RailJumper home"><img class="brand-logo" src="${assetBaseUrl}railjumper-logo.png" width="52" height="52" alt="" /> RAILJUMPER</a><button id="sound" class="icon-button" aria-label="Mute sound" title="Mute sound"></button></header>
 <div id="hud" class="hud" hidden><div class="stat"><span>SCORE</span><strong id="score">00000</strong></div><div class="stat coins"><span>COINS</span><strong><i>✦</i> <b id="coins">0</b></strong></div><button id="pause" class="icon-button" aria-label="Pause game" title="Pause (Esc)">${pauseIcon}</button></div>
 <section id="welcome" class="welcome"><div class="eyebrow"><span></span> A LITTLE SPEED. A LOT OF SUNSHINE.</div><h1>Next stop:<br><em>full speed.</em></h1><p>Three tracks. Endless possibilities.<br>Race up ramps, leap between trains,<br>and chase the coins over the rooftops.</p><button id="start" class="primary">LET’S RUN <span>↗</span></button><div class="start-note">PRESS ENTER TO HIT THE TRACKS</div><div class="best-line"><span>♜</span><div>YOUR PERSONAL BEST<strong id="welcome-best">0 <small>PTS</small></strong></div></div></section>
 <div id="scene-sticker" class="scene-sticker"><span>GOLD RAMPS LEAD UP</span><strong>Take the roof.</strong><svg width="75" height="26" viewBox="0 0 75 26" aria-hidden="true"><path d="M3 7 Q32 0 66 16 M54 4 L68 17 L51 22" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
