@@ -1,5 +1,7 @@
 # RailJumper
 
+**Play here: https://davidaugustat.github.io/rail-jumper-game/**
+
 A colorful 3D endless railway runner built with TypeScript and Three.js. All gameplay, rendering, procedural models, sound effects, and score persistence run in the browser.
 
 **Note:** This game was entirely vibe-coded using OpenAI Codex (GPT-6 Astra and GPT-5.6).
