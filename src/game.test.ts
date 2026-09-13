@@ -264,6 +264,30 @@ describe('ramps and moving train roofs', () => {
     expect(g.y).toBe(ROOF_HEIGHT);
     expect(g.grounded).toBe(true);
   });
+  it('lands when a passing train nose moves beneath the runner at touchdown', () => {
+    const g = clean();
+    g.y = ROOF_HEIGHT;
+    g.entities = [obstacle('train', 0), { ...obstacle('train', 42.25, 1, 8), id: 2, length: 34 }];
+    g.jump();
+    g.move(1);
+    for (let i = 0; i < 140 && g.phase === 'playing' && !g.grounded; i++) g.update(STEP);
+    expect(g.phase).toBe('playing');
+    expect(g.x).toBe(3);
+    expect(g.y).toBe(ROOF_HEIGHT);
+    expect(g.grounded).toBe(true);
+  });
+  it('forgives a slightly late passing roof at touchdown', () => {
+    const g = clean();
+    g.y = ROOF_HEIGHT;
+    g.entities = [obstacle('train', 0), { ...obstacle('train', 42.8, 1, 8), id: 2, length: 34 }];
+    g.jump();
+    g.move(1);
+    for (let i = 0; i < 140 && g.phase === 'playing' && !g.grounded; i++) g.update(STEP);
+    expect(g.phase).toBe('playing');
+    expect(g.x).toBe(3);
+    expect(g.y).toBe(ROOF_HEIGHT);
+    expect(g.grounded).toBe(true);
+  });
   it('gives roof jumps a longer arc than ground jumps', () => {
     const ground = clean();
     ground.jump();

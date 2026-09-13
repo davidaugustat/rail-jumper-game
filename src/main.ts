@@ -20,15 +20,16 @@ app.innerHTML = `
 <section id="welcome" class="welcome"><div class="eyebrow"><span></span> A LITTLE SPEED. A LOT OF SUNSHINE.</div><h1>Next stop:<br><em>full speed.</em></h1><p>Three tracks. Endless possibilities.<br>Race up ramps, leap between trains,<br>and chase the coins over the rooftops.</p><button id="start" class="primary">LET’S RUN <span>↗</span></button><div class="start-note">PRESS ENTER TO HIT THE TRACKS</div><div class="best-line"><span>♜</span><div>YOUR PERSONAL BEST<strong id="welcome-best">0 <small>PTS</small></strong></div></div></section>
 <div id="scene-sticker" class="scene-sticker"><span>GOLD RAMPS LEAD UP</span><strong>Take the roof.</strong><svg width="75" height="26" viewBox="0 0 75 26" aria-hidden="true"><path d="M3 7 Q32 0 66 16 M54 4 L68 17 L51 22" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
 <div id="modal" class="modal" hidden><section class="modal-card"><div id="modal-eyebrow" class="eyebrow">TAKE A BREATHER</div><h2 id="modal-title">On a break.</h2><p id="modal-copy">The tracks will be right here.</p><div id="results" class="results" hidden><div><span>SCORE</span><strong id="final-score">0</strong></div><div><span>DISTANCE</span><strong id="final-distance">0m</strong></div><div><span>COINS</span><strong id="final-coins">0</strong></div></div><div id="record" class="record"></div><button id="continue" class="primary">KEEP RUNNING <span>→</span></button><button id="restart" class="text-button">Start a fresh run</button></section></div>
-<section class="controls" aria-label="How to play"><div class="control"><div class="keys"><kbd>←</kbd><kbd>→</kbd></div><div><strong>Switch tracks</strong><span>Make your next move</span></div></div><div class="control"><kbd>↑</kbd><div><strong>Jump</strong><span>Jump · cancel a slide</span></div></div><div class="control"><kbd>↓</kbd><div><strong>Slide</strong><span>Slide · drop from a jump</span></div></div><div class="control"><kbd>esc</kbd><div><strong>Pause</strong><span>Take a break</span></div></div></section>
+<section class="controls" aria-label="How to play"><div class="control"><div class="keys"><kbd>←</kbd><kbd>→</kbd></div><div><strong>Switch tracks</strong><span>Make your next move</span></div></div><div class="control"><kbd>↑</kbd><div><strong>Jump</strong><span>Jump · cancel a slide</span></div></div><div class="control"><kbd>↓</kbd><div><strong>Slide</strong><span>Slide · drop from a jump</span></div></div><div class="control"><kbd>esc</kbd><div><strong>Pause</strong><span>Take a break</span></div></div><div class="swipe-guide"><div class="swipe-arrows" aria-hidden="true"><span class="swipe-up">↑</span><span>←</span><span>↓</span><span>→</span></div><div><strong>Swipe to move</strong><span>Left/right: tracks · Up: jump · Down: slide</span></div></div></section>
 </main>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const scene = $<HTMLCanvasElement>('scene');
 let world: World;
 try {
-  world = new World($<HTMLCanvasElement>('scene'));
+  world = new World(scene);
 } catch {
   $('welcome').innerHTML =
-    '<h1>A small detour.</h1><p>This game needs WebGL 2 graphics support. Please try a current desktop browser with hardware acceleration enabled.</p>';
+    '<h1>A small detour.</h1><p>This game needs WebGL 2 graphics support. Please try a current browser with hardware acceleration enabled.</p>';
   throw new Error('WebGL initialization failed');
 }
 const game = new Game(),
@@ -85,7 +86,7 @@ function start() {
   $('scene-sticker').hidden = true;
   $('modal').hidden = true;
   $('hud').hidden = false;
-  app.classList.add('playing');
+  app.classList.add('playing', 'run-active');
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }
 function showPause() {
@@ -164,6 +165,31 @@ window.addEventListener('keydown', (e) => {
     }
   }
 });
+const SWIPE_THRESHOLD = 30;
+let activeSwipe: { pointerId: number; x: number; y: number } | undefined;
+scene.addEventListener('pointerdown', (event) => {
+  if (event.pointerType !== 'touch' || !event.isPrimary || game.phase !== 'playing') return;
+  activeSwipe = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+  scene.setPointerCapture(event.pointerId);
+});
+scene.addEventListener('pointerup', (event) => {
+  if (!activeSwipe || event.pointerId !== activeSwipe.pointerId) return;
+  const { x, y } = activeSwipe;
+  activeSwipe = undefined;
+  if (scene.hasPointerCapture(event.pointerId)) scene.releasePointerCapture(event.pointerId);
+  if (game.phase !== 'playing') return;
+  const dx = event.clientX - x;
+  const dy = event.clientY - y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_THRESHOLD) return;
+  if (Math.abs(dx) > Math.abs(dy)) game.move(dx < 0 ? -1 : 1);
+  else if (dy < 0) game.jump();
+  else game.duck();
+});
+const cancelSwipe = (event: PointerEvent) => {
+  if (activeSwipe?.pointerId === event.pointerId) activeSwipe = undefined;
+};
+scene.addEventListener('pointercancel', cancelSwipe);
+scene.addEventListener('lostpointercapture', cancelSwipe);
 window.addEventListener('blur', showPause);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) showPause();

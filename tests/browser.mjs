@@ -1,6 +1,27 @@
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 const name = 'chromium';
+async function swipe(client, from, to) {
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ ...from, id: 0, radiusX: 2, radiusY: 2, force: 1 }],
+  });
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ ...to, id: 0, radiusX: 2, radiusY: 2, force: 1 }],
+  });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+async function elementsOutsideViewport(page, selectors) {
+  return page.evaluate((targets) => {
+    return targets.filter((selector) => {
+      const element = document.querySelector(selector);
+      if (!element || !element.getClientRects().length) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.left < 0 || rect.top < 0 || rect.right > innerWidth || rect.bottom > innerHeight;
+    });
+  }, selectors);
+}
 const browser = await chromium.launch({
   headless: true,
   args: [
@@ -129,9 +150,103 @@ try {
   await page.setViewportSize({ width: 900, height: 700 });
   if (process.env.SCREENSHOTS)
     await page.screenshot({ timeout: 60000, path: `/tmp/railjumper-${name}-compact.png` });
+  await page.close();
+
+  const mobile = await browser.newPage({
+    viewport: { width: 320, height: 568 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const mobileErrors = [];
+  mobile.on('pageerror', (e) => mobileErrors.push(e.message));
+  await mobile.goto('http://localhost:5173');
+  await mobile.locator('#start').waitFor();
+  await mobile.evaluate(() => document.fonts.ready);
+  assert.equal(await mobile.locator('.swipe-guide').isVisible(), true);
+  assert.equal(await mobile.locator('.control').first().isVisible(), false);
+  assert.deepEqual(
+    await elementsOutsideViewport(mobile, [
+      '.topbar',
+      '.welcome',
+      '#start',
+      '.best-line',
+      '.controls',
+    ]),
+    [],
+  );
+  assert.deepEqual(
+    await mobile.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+    })),
+    { width: 320, height: 568, viewportWidth: 320, viewportHeight: 568 },
+  );
+  const touch = await mobile.context().newCDPSession(mobile);
+  await swipe(touch, { x: 100, y: 300 }, { x: 180, y: 300 });
+  assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].phase), 'ready');
+  await mobile.locator('#start').click();
+  await mobile.evaluate(() => {
+    const game = window[Symbol.for('railjumper.game')];
+    game.entities = [];
+    game.routes = [];
+    game.nextEncounter = 1e9;
+  });
+  assert.equal(await mobile.locator('.brand').isVisible(), false);
+  assert.deepEqual(
+    await elementsOutsideViewport(mobile, ['#sound', '#hud', '#score', '#coins', '#pause']),
+    [],
+  );
+  await swipe(touch, { x: 100, y: 300 }, { x: 180, y: 300 });
+  assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].lane), 1);
+  await swipe(touch, { x: 180, y: 300 }, { x: 100, y: 300 });
+  assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].lane), 0);
+  await swipe(touch, { x: 100, y: 300 }, { x: 108, y: 304 });
+  assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].lane), 0);
+  await swipe(touch, { x: 150, y: 350 }, { x: 150, y: 270 });
+  assert.deepEqual(
+    await mobile.evaluate(() => {
+      const game = window[Symbol.for('railjumper.game')];
+      return { grounded: game.grounded, rising: game.vy > 0 };
+    }),
+    { grounded: false, rising: true },
+  );
+  await mobile.evaluate(() => {
+    const game = window[Symbol.for('railjumper.game')];
+    game.y = 0;
+    game.vy = 0;
+    game.grounded = true;
+    game.slide = 0;
+    game.pendingSlide = false;
+  });
+  await swipe(touch, { x: 150, y: 270 }, { x: 150, y: 350 });
+  assert.ok((await mobile.evaluate(() => window[Symbol.for('railjumper.game')].slide)) > 0);
+  await mobile.locator('#pause').click();
+  assert.deepEqual(
+    await elementsOutsideViewport(mobile, ['.modal-card', '#continue', '#restart', '.controls']),
+    [],
+  );
+  await swipe(touch, { x: 100, y: 300 }, { x: 180, y: 300 });
+  assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].lane), 0);
+  await mobile.locator('#continue').click();
+  await mobile.evaluate(() => window[Symbol.for('railjumper.game')].crash());
+  assert.deepEqual(
+    await elementsOutsideViewport(mobile, ['.modal-card', '.results', '#continue', '.controls']),
+    [],
+  );
+  await mobile.setViewportSize({ width: 390, height: 844 });
+  assert.deepEqual(
+    await elementsOutsideViewport(mobile, ['.modal-card', '#continue', '.controls']),
+    [],
+  );
+  if (process.env.SCREENSHOTS)
+    await mobile.screenshot({ timeout: 60000, path: `/tmp/railjumper-${name}-mobile.png` });
+  assert.deepEqual(mobileErrors, []);
+  await mobile.close();
   assert.deepEqual(errors, []);
   console.log(
-    `${name}: start, keyboard, pause, collision, restart, focus, persistence, resize passed`,
+    `${name}: keyboard, touch gestures, mobile layout, pause, collision, persistence and resize passed`,
   );
 } finally {
   await browser.close();
