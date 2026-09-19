@@ -1,3 +1,5 @@
+import { districtAt, type DistrictId } from './map';
+
 export type Kind = 'low' | 'high' | 'train' | 'coin';
 export interface Entity {
   id: number;
@@ -37,11 +39,71 @@ export function distanceAt(time: number) {
     MAX_SPEED * (time - accelerating)
   );
 }
+export type RouteSurface = 'ground' | 'ramp' | 'roof';
+export type RouteAction = 'jump' | 'duck';
 export interface Route {
   time: number;
   safe: number;
   rooftop: boolean;
+  lane: number;
+  surface: RouteSurface;
+  action?: RouteAction;
+  family: EncounterFamily;
+  encounter: number;
 }
+
+export const ENCOUNTER_FAMILIES = [
+  'open-barriers',
+  'mixed-train-row',
+  'low-high-fork',
+  'jump-slide-chain',
+  'staggered-train-weave',
+  'two-stage-lane-change',
+  'ramp-ascent',
+  'roof-obstacles',
+  'passing-train-transfer',
+  'multi-roof-chain',
+  'roof-exit',
+  'tunnel-mix',
+  'reward-section',
+] as const;
+export type EncounterFamily = (typeof ENCOUNTER_FAMILIES)[number];
+
+export interface GeneratedEncounter {
+  id: number;
+  family: EncounterFamily;
+  district: DistrictId;
+  start: number;
+  end: number;
+  entryLane: number;
+  exitLane: number;
+  mirrored: boolean;
+  fallback: boolean;
+}
+
+interface EntitySpec {
+  kind: Kind;
+  lane: number;
+  time: number;
+  options?: Partial<Entity>;
+}
+
+interface EncounterDraft extends GeneratedEncounter {
+  entities: EntitySpec[];
+  steps: Omit<Route, 'family' | 'encounter'>[];
+}
+
+const LANES = [-1, 0, 1] as const;
+const RECENT_FAMILY_WINDOW = 3;
+const INTRO_DISTANCE = 220;
+const MAX_CANDIDATE_ATTEMPTS = 4;
+const INTRO_FAMILIES: readonly EncounterFamily[] = [
+  'open-barriers',
+  'mixed-train-row',
+  'low-high-fork',
+  'two-stage-lane-change',
+  'reward-section',
+];
 export class Game {
   phase: Phase = 'ready';
   lane = 0;
@@ -64,6 +126,12 @@ export class Game {
   row = 0;
   safeLane = 0;
   routes: Route[] = [];
+  encounters: GeneratedEncounter[] = [];
+  recentFamilies: EncounterFamily[] = [];
+  encounterIndex = 0;
+  rejectedCandidates = 0;
+  fallbackCount = 0;
+  candidateFilter?: (encounter: GeneratedEncounter) => boolean;
   lastTrainLane: number | undefined;
   onEvent: (event: 'jump' | 'coin' | 'bonk' | 'crash') => void = () => {};
   constructor(public random: () => number = Math.random) {}
@@ -93,6 +161,11 @@ export class Game {
     this.bonkWindow = this.bonkFlash = 0;
     this.entities = [];
     this.routes = [];
+    this.encounters = [];
+    this.recentFamilies = [];
+    this.encounterIndex = 0;
+    this.rejectedCandidates = 0;
+    this.fallbackCount = 0;
     this.nextEncounter = 3;
     this.lastTrainLane = undefined;
     this.rampAccessTrainId = undefined;
@@ -161,7 +234,9 @@ export class Game {
     return e;
   }
   coinsAlong(train: Entity) {
-    for (let offset = -train.length / 2 + 2; offset < train.length / 2; offset += 3) {
+    const spacing = 2.4 + this.random() * 1.8;
+    const inset = 1.5 + this.random() * 2;
+    for (let offset = -train.length / 2 + inset; offset < train.length / 2; offset += spacing) {
       this.entities.push({
         id: this.nextId++,
         kind: 'coin',
@@ -173,7 +248,7 @@ export class Game {
       });
     }
     if (train.ramp)
-      for (let d = 2; d < RAMP_LENGTH; d += 2)
+      for (let d = 1.5 + this.random(); d < RAMP_LENGTH; d += 1.7 + this.random() * 0.8)
         this.entities.push({
           id: this.nextId++,
           kind: 'coin',
@@ -184,60 +259,380 @@ export class Game {
           length: 0.4,
         });
   }
+  private choose<T>(values: readonly T[]): T {
+    return values[Math.min(values.length - 1, Math.floor(this.random() * values.length))];
+  }
+  private routeStep(
+    time: number,
+    lane: number,
+    surface: RouteSurface = 'ground',
+    action?: RouteAction,
+  ): Omit<Route, 'family' | 'encounter'> {
+    return { time, safe: lane, lane, surface, rooftop: surface !== 'ground', action };
+  }
+  private addCoinPattern(
+    draft: EncounterDraft,
+    lane: number,
+    time: number,
+    pattern: number,
+    baseY = 1,
+    extra = 0,
+  ) {
+    const count = [1, 3, 5, 4, 6][pattern % 5];
+    const requestedSpacing = [0, 0.11, 0.16, 0.21, 0.27][pattern % 5];
+    const spacing = baseY >= ROOF_HEIGHT ? Math.min(requestedSpacing, 0.11) : requestedSpacing;
+    for (let i = 0; i < count; i++) {
+      const centered = i - (count - 1) / 2;
+      const diagonal =
+        pattern % 5 === 2 && baseY < ROOF_HEIGHT
+          ? Math.max(-1, Math.min(1, lane + Math.sign(centered)))
+          : lane;
+      const arc = pattern % 5 === 3 ? Math.sin((Math.PI * (i + 1)) / (count + 1)) * 1.7 : 0;
+      draft.entities.push({
+        kind: 'coin',
+        lane: diagonal,
+        time: time + centered * spacing,
+        options: { y: baseY + arc, extra, length: 0.4 },
+      });
+    }
+  }
+  private makeDraft(family: EncounterFamily, start: number, attempt: number): EncounterDraft {
+    const id = this.encounterIndex;
+    const mirrored = this.random() < 0.5;
+    const direction = mirrored ? -1 : 1;
+    const entry = this.safeLane;
+    const adjacent = Math.max(
+      -1,
+      Math.min(1, entry + (entry === direction ? -direction : direction)),
+    );
+    const far = LANES.find((lane) => lane !== entry && lane !== adjacent)!;
+    const base = start + 0.75;
+    const draft: EncounterDraft = {
+      id,
+      family,
+      district: districtAt(distanceAt(base)).id,
+      start,
+      end: base + 0.25,
+      entryLane: entry,
+      exitLane: entry,
+      mirrored,
+      fallback: false,
+      entities: [],
+      steps: [this.routeStep(start, entry)],
+    };
+    const train = (lane: number, time: number, options: Partial<Entity> = {}) =>
+      draft.entities.push({
+        kind: 'train',
+        lane,
+        time,
+        options: {
+          length: 13 + this.random() * 7,
+          extra: this.random() < 0.55 ? 4 + this.random() * 5 : 0,
+          ...options,
+        },
+      });
+    const barrier = (kind: 'low' | 'high', lane: number, time: number, y = 0) =>
+      draft.entities.push({ kind, lane, time, options: { y } });
+
+    switch (family) {
+      case 'open-barriers': {
+        barrier(this.random() < 0.5 ? 'low' : 'high', entry, base);
+        draft.steps.push(this.routeStep(base - 0.45, adjacent));
+        draft.exitLane = adjacent;
+        this.addCoinPattern(draft, adjacent, base, id + attempt);
+        break;
+      }
+      case 'mixed-train-row': {
+        train(entry, base, { length: 14, extra: 0 });
+        barrier(this.random() < 0.5 ? 'low' : 'high', adjacent, base);
+        draft.steps.push(this.routeStep(base - 0.58, far));
+        draft.exitLane = far;
+        this.addCoinPattern(draft, far, base, id + 1);
+        break;
+      }
+      case 'low-high-fork': {
+        const action: RouteAction = this.random() < 0.5 ? 'jump' : 'duck';
+        barrier(action === 'jump' ? 'low' : 'high', entry, base);
+        train(adjacent, base, { length: 14, extra: 0 });
+        barrier(action === 'jump' ? 'high' : 'low', far, base);
+        draft.steps.push(
+          this.routeStep(base - (action === 'jump' ? 0.34 : 0.22), entry, 'ground', action),
+        );
+        this.addCoinPattern(
+          draft,
+          entry,
+          base,
+          action === 'jump' ? 3 : 1,
+          action === 'jump' ? 1.35 : 0.55,
+        );
+        break;
+      }
+      case 'jump-slide-chain': {
+        barrier('low', entry, base);
+        barrier('high', entry, base + 0.88);
+        train(adjacent, base + 0.35, { length: 24, extra: 0 });
+        barrier('low', far, base + 0.35);
+        draft.steps.push(this.routeStep(base - 0.34, entry, 'ground', 'jump'));
+        draft.steps.push(this.routeStep(base + 0.46, entry, 'ground', 'duck'));
+        draft.end = base + 1.18;
+        this.addCoinPattern(draft, entry, base, 3, 1.3);
+        break;
+      }
+      case 'staggered-train-weave': {
+        const exit = far;
+        train(entry, base, { length: 12, extra: 0 });
+        train(adjacent, base + 1.08, { length: 12, extra: 0 });
+        draft.steps.push(this.routeStep(base - 0.58, adjacent));
+        draft.steps.push(this.routeStep(base + 0.5, exit));
+        draft.exitLane = exit;
+        draft.end = base + 1.3;
+        this.addCoinPattern(draft, adjacent, base, 2);
+        this.addCoinPattern(draft, exit, base + 1.08, 1);
+        break;
+      }
+      case 'two-stage-lane-change': {
+        train(entry, base, { length: 13, extra: 0 });
+        barrier('low', far, base);
+        train(adjacent, base + 1.12, { length: 13, extra: 0 });
+        barrier('high', entry, base + 1.12);
+        draft.steps.push(this.routeStep(base - 0.58, adjacent));
+        draft.steps.push(this.routeStep(base + 0.55, far));
+        draft.exitLane = far;
+        draft.end = base + 1.34;
+        this.addCoinPattern(draft, adjacent, base, 1);
+        this.addCoinPattern(draft, far, base + 1.12, 2);
+        break;
+      }
+      case 'ramp-ascent': {
+        train(adjacent, base + 0.55, { ramp: true, length: 27, extra: 0 });
+        train(far, base + 0.55, { length: 22, extra: 0 });
+        barrier('high', entry, base + 1.3);
+        draft.steps.push(this.routeStep(base - 0.7, adjacent, 'ramp'));
+        draft.steps.push(this.routeStep(base + 0.15, adjacent, 'roof'));
+        draft.steps.push(this.routeStep(base + 1.45, adjacent));
+        draft.exitLane = adjacent;
+        draft.end = base + 1.65;
+        this.addCoinPattern(draft, adjacent, base + 0.5, 4, ROOF_HEIGHT + 0.9);
+        break;
+      }
+      case 'roof-obstacles': {
+        train(adjacent, base + 0.55, { ramp: true, length: 36, extra: 0 });
+        train(far, base + 0.55, { length: 31, extra: 0 });
+        barrier('low', adjacent, base + 0.7, ROOF_HEIGHT);
+        barrier('low', adjacent, base + 1.25);
+        barrier('high', far, base + 1.25);
+        // The clear lane is the guaranteed route; the ramp and hurdle form a
+        // higher-risk roof line with a separate arc of rewards.
+        draft.end = base + 1.5;
+        this.addCoinPattern(draft, adjacent, base + 0.7, 3, ROOF_HEIGHT + 1.15);
+        break;
+      }
+      case 'passing-train-transfer': {
+        const passingSpeed = 7 + this.random() * 2;
+        train(adjacent, base + 0.55, { ramp: true, length: 30, extra: 0 });
+        train(far, base + 1.18, { length: 38, extra: passingSpeed });
+        barrier('low', adjacent, base + 1.65);
+        barrier('high', far, base + 1.65);
+        // The timed moving-roof line is an optional transfer; the third lane
+        // remains the validated route when its approach timing is unfavorable.
+        draft.end = base + 2;
+        this.addCoinPattern(draft, far, base + 1.12, 4, ROOF_HEIGHT + 0.9, passingSpeed);
+        break;
+      }
+      case 'multi-roof-chain': {
+        train(entry, base + 0.55, { ramp: true, length: 32, extra: 0 });
+        train(adjacent, base + 1.15, { length: 38, extra: 7 });
+        train(far, base + 2.05, { length: 40, extra: 6 });
+        barrier('low', entry, base + 1.65);
+        barrier('high', adjacent, base + 1.65);
+        barrier('high', entry, base + 3.1);
+        barrier('low', adjacent, base + 3.1);
+        draft.steps.push(this.routeStep(base - 0.7, entry, 'ramp'));
+        draft.steps.push(this.routeStep(base + 0.18, adjacent, 'roof', 'jump'));
+        draft.steps.push(this.routeStep(base + 1.16, far, 'roof', 'jump'));
+        draft.steps.push(this.routeStep(base + 2.85, far));
+        draft.exitLane = far;
+        draft.end = base + 3.45;
+        this.addCoinPattern(draft, adjacent, base + 0.9, 2, ROOF_HEIGHT + 0.9, 7);
+        this.addCoinPattern(draft, far, base + 1.9, 4, ROOF_HEIGHT + 0.9, 6);
+        break;
+      }
+      case 'roof-exit': {
+        train(adjacent, base + 0.55, { ramp: true, length: 32, extra: 0 });
+        train(far, base + 0.55, { length: 26, extra: 0 });
+        barrier('low', adjacent, base + 1.2);
+        barrier('high', far, base + 1.2);
+        // A player can take the ramp and transfer back to this open exit lane,
+        // while the contract retains the always-safe ground continuation.
+        draft.end = base + 1.5;
+        this.addCoinPattern(draft, adjacent, base + 0.35, 4, ROOF_HEIGHT + 0.9);
+        this.addCoinPattern(draft, entry, base + 1.55, 0);
+        break;
+      }
+      case 'tunnel-mix': {
+        const action: RouteAction = mirrored ? 'jump' : 'duck';
+        train(adjacent, base, { length: 22, extra: 0 });
+        barrier(action === 'jump' ? 'low' : 'high', entry, base);
+        barrier(action === 'jump' ? 'high' : 'low', far, base);
+        draft.steps.push(
+          this.routeStep(base - (action === 'jump' ? 0.34 : 0.22), entry, 'ground', action),
+        );
+        draft.end = base + 0.55;
+        this.addCoinPattern(
+          draft,
+          entry,
+          base,
+          action === 'jump' ? 3 : 1,
+          action === 'jump' ? 1.3 : 0.55,
+        );
+        break;
+      }
+      case 'reward-section': {
+        const rewardLane = adjacent;
+        train(entry, base, { length: 13, extra: 0 });
+        barrier(attempt % 2 === 0 ? 'low' : 'high', far, base);
+        draft.steps.push(this.routeStep(base - 0.58, rewardLane));
+        draft.exitLane = rewardLane;
+        draft.end = base + 0.95;
+        this.addCoinPattern(draft, rewardLane, base - 0.15, id, 1);
+        this.addCoinPattern(draft, rewardLane, base + 0.75, id + 3, 1);
+        break;
+      }
+    }
+    return draft;
+  }
+  private pickFamily(time: number): EncounterFamily {
+    const distance = distanceAt(time);
+    const district = districtAt(distance);
+    const allowed = distance < INTRO_DISTANCE ? INTRO_FAMILIES : ENCOUNTER_FAMILIES;
+    const choices = allowed.filter((family) => !this.recentFamilies.includes(family));
+    const pool = choices.length ? choices : allowed;
+    const total = pool.reduce((sum, family) => sum + district.encounterWeights[family], 0);
+    let roll = this.random() * total;
+    for (const family of pool) {
+      roll -= district.encounterWeights[family];
+      if (roll <= 0) return family;
+    }
+    return pool[pool.length - 1];
+  }
+  private addDraftEntities(draft: EncounterDraft, target: Game = this) {
+    for (const spec of draft.entities) target.add(spec.kind, spec.lane, spec.time, spec.options);
+  }
+  private validateEncounter(draft: EncounterDraft) {
+    const simulate = (timingOffset: number) => {
+      const start = Math.max(this.elapsed, draft.start - 0.9);
+      const verifier = new Game(() => 0.5);
+      verifier.phase = 'playing';
+      verifier.elapsed = start;
+      verifier.distance = distanceAt(start);
+      verifier.nextEncounter = Number.POSITIVE_INFINITY;
+      verifier.lane = draft.entryLane;
+      verifier.x = draft.entryLane * LANE_WIDTH;
+      verifier.safeLane = draft.entryLane;
+      for (const entity of this.entities) {
+        const z =
+          entity.z -
+          (verifier.distance - this.distance) -
+          entity.extra * (verifier.elapsed - this.elapsed);
+        if (z > -80 && z < 140) verifier.entities.push({ ...entity, z, id: verifier.nextId++ });
+      }
+      this.addDraftEntities(draft, verifier);
+      const steps = draft.steps
+        .filter((step) => step.time + timingOffset >= start - STEP)
+        .sort((a, b) => a.time - b.time);
+      let cursor = 0;
+      const finish = draft.end + timingOffset + 0.35;
+      while (verifier.elapsed < finish && verifier.phase === 'playing') {
+        while (
+          cursor < steps.length &&
+          steps[cursor].time + timingOffset <= verifier.elapsed + STEP / 2
+        ) {
+          const step = steps[cursor++];
+          while (verifier.lane !== step.lane) verifier.move(Math.sign(step.lane - verifier.lane));
+          if (step.action === 'jump') verifier.jump();
+          if (step.action === 'duck') verifier.duck();
+        }
+        verifier.update(STEP);
+      }
+      return (
+        verifier.phase === 'playing' &&
+        verifier.lane === draft.exitLane &&
+        verifier.bonkWindow === 0
+      );
+    };
+    return [-0.05, 0, 0.05].every(simulate) && (this.candidateFilter?.(draft) ?? true);
+  }
+  private fallbackDraft(start: number): EncounterDraft {
+    const available = INTRO_FAMILIES.filter((family) => !this.recentFamilies.includes(family));
+    const draft = this.makeDraft(available[0] ?? 'reward-section', start, 0);
+    draft.fallback = true;
+    const blocked = LANES.filter((lane) => lane !== this.safeLane);
+    // Both rows leave the contracted lane open, so the fallback stays safe
+    // without creating a visually empty section.
+    draft.entities = [
+      {
+        kind: 'train',
+        lane: blocked[0],
+        time: start + 0.55,
+        options: { length: 12, extra: 0 },
+      },
+      { kind: 'low', lane: blocked[1], time: start + 0.55 },
+      { kind: 'high', lane: blocked[0], time: start + 1.2 },
+      {
+        kind: 'train',
+        lane: blocked[1],
+        time: start + 1.2,
+        options: { length: 12, extra: 0 },
+      },
+      { kind: 'coin', lane: this.safeLane, time: start + 0.55, options: { y: 1 } },
+      { kind: 'coin', lane: this.safeLane, time: start + 1.2, options: { y: 1 } },
+    ];
+    draft.steps = [this.routeStep(start, this.safeLane)];
+    draft.entryLane = draft.exitLane = this.safeLane;
+    draft.end = start + 1.6;
+    return draft;
+  }
+  private commitEncounter(draft: EncounterDraft) {
+    this.addDraftEntities(draft);
+    for (const step of draft.steps)
+      this.routes.push({ ...step, family: draft.family, encounter: draft.id });
+    this.routes.sort((a, b) => a.time - b.time);
+    const encounter: GeneratedEncounter = {
+      id: draft.id,
+      family: draft.family,
+      district: draft.district,
+      start: draft.start,
+      end: draft.end,
+      entryLane: draft.entryLane,
+      exitLane: draft.exitLane,
+      mirrored: draft.mirrored,
+      fallback: draft.fallback,
+    };
+    this.encounters.push(encounter);
+    this.safeLane = draft.exitLane;
+    this.recentFamilies.push(draft.family);
+    if (this.recentFamilies.length > RECENT_FAMILY_WINDOW) this.recentFamilies.shift();
+    this.encounterIndex++;
+    this.row++;
+    this.nextEncounter = draft.end;
+  }
   generateAhead() {
     while (distanceAt(this.nextEncounter) - this.distance < GENERATION_DISTANCE) {
-      // Two mixed rows followed by a two-train rooftop route. Every row has at
-      // least one train, making trains the dominant hazard while preserving a
-      // verified ground lane through overlapping encounters.
-      // Train encounters occupy their own reserved time window, preventing a
-      // later row or faster train from blocking the one guaranteed ground route.
-      if (this.row % 3 === 2) {
-        const entry = Math.floor(this.random() * 3) - 1;
-        const target = entry === 0 ? (this.random() < 0.5 ? -1 : 1) : 0;
-        const safe = [-1, 0, 1].find((l) => l !== entry && l !== target)!;
-        const time = this.nextEncounter + 1.3;
-        const train = this.add('train', entry, time, { ramp: true, length: 28 });
-        const passing = this.add('train', target, time + 0.25, {
-          extra: 6 + this.random() * 4,
-          length: 34,
-        });
-        this.coinsAlong(train);
-        this.coinsAlong(passing);
-        this.routes.push({ time: time - 1.35, safe, rooftop: true });
-        this.safeLane = safe;
-        this.lastTrainLane = undefined;
-        this.nextEncounter = time + 2;
-      } else {
-        // A pair of mixed rows shares its safe lane. Long trains can therefore
-        // overlap visually without forcing the player across a train's tail.
-        if (this.row % 3 === 0) {
-          const choices = [-1, 0, 1].filter((l) => l !== this.safeLane && l !== this.lastTrainLane);
-          this.safeLane = choices[Math.floor(this.random() * choices.length)] ?? this.safeLane;
+      let accepted: EncounterDraft | undefined;
+      for (let attempt = 0; attempt < MAX_CANDIDATE_ATTEMPTS; attempt++) {
+        const family = this.pickFamily(this.nextEncounter);
+        const candidate = this.makeDraft(family, this.nextEncounter, attempt);
+        if (this.validateEncounter(candidate)) {
+          accepted = candidate;
+          break;
         }
-        const time = this.nextEncounter;
-        const blocked = [-1, 0, 1].filter((l) => l !== this.safeLane);
-        const trainLane = blocked[Math.floor(this.random() * blocked.length)];
-        const barrierLane = blocked.find((l) => l !== trainLane)!;
-        this.add('train', trainLane, time, {
-          extra: this.random() < 0.6 ? 5 + this.random() * 4 : 0,
-          length: 14 + this.random() * 5,
-        });
-        this.lastTrainLane = trainLane;
-        const kind = this.random() < 0.5 ? 'low' : 'high';
-        this.add(kind, barrierLane, time);
-        if (kind === 'low') this.add('coin', barrierLane, time, { y: 2.35, length: 0.4 });
-        for (let i = -1; i <= 1; i++)
-          this.add('coin', this.safeLane, time, {
-            z: distanceAt(time) - this.distance + i * 2,
-            y: 1,
-            length: 0.4,
-          });
-        // Route time is the decision point at the front of the longest train,
-        // leaving enough time to complete a lane change before its nose arrives.
-        this.routes.push({ time: time - 0.45, safe: this.safeLane, rooftop: false });
-        this.nextEncounter += Math.max(0.86, 1.1 - time * 0.0015);
+        this.rejectedCandidates++;
       }
-      this.row++;
+      if (!accepted) {
+        accepted = this.fallbackDraft(this.nextEncounter);
+        this.fallbackCount++;
+      }
+      this.commitEncounter(accepted);
     }
   }
   surface(e: Entity, x = this.x, z = e.z, roofMargin = 0): number | undefined {

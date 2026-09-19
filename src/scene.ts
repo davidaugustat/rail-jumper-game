@@ -1,7 +1,8 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Game, ROOF_HEIGHT, RAMP_LENGTH, type Entity } from './game';
-export const SCENERY_LENGTH = 800;
+import { DISTRICTS, WORLD_LENGTH } from './map';
+export const SCENERY_LENGTH = WORLD_LENGTH;
 export const FOG_START = 220;
 export const FOG_END = 560;
 const colors = {
@@ -45,28 +46,89 @@ export class World {
     sun.shadow.bias = -0.001;
     this.scene.add(sun);
     // The railway sits above the water; bridge sections expose the river below.
-    this.box(this.scene, [450, 0.4, 900], [0, -7, -420], 0x63adb4);
-    this.box(this.scene, [10.5, 0.5, 850], [0, -0.6, -400], colors.ballast);
-    this.box(this.scene, [10.5, 0.2, 850], [0, -0.25, -400], colors.ballast);
+    this.box(this.scene, [450, 0.4, WORLD_LENGTH + 200], [0, -7, -WORLD_LENGTH / 2], 0x63adb4);
+    this.box(
+      this.scene,
+      [10.5, 0.5, WORLD_LENGTH + 50],
+      [0, -0.6, -WORLD_LENGTH / 2],
+      colors.ballast,
+    );
+    this.box(
+      this.scene,
+      [10.5, 0.2, WORLD_LENGTH + 50],
+      [0, -0.25, -WORLD_LENGTH / 2],
+      colors.ballast,
+    );
     for (const lane of [-3, 0, 3])
       for (const dx of [-0.75, 0.75])
-        this.box(this.scene, [0.1, 0.14, 850], [lane + dx, -0.08, -400], colors.rail);
+        this.box(
+          this.scene,
+          [0.1, 0.14, WORLD_LENGTH + 50],
+          [lane + dx, -0.08, -WORLD_LENGTH / 2],
+          colors.rail,
+        );
     this.scene.add(this.scenery);
     for (let i = 0; i < SCENERY_LENGTH / 2; i++) {
+      const mapDistance = i * 2;
+      const district = DISTRICTS[Math.floor(mapDistance / 800)];
       const group = new T.Group();
       group.position.z = -i * 2;
       group.userData.base = -i * 2;
       for (const lane of [-3, 0, 3])
         this.box(group, [2.2, 0.13, 0.32], [lane, -0.14, 0], colors.sleeper);
-      const bridge = i >= 180 && i <= 220;
-      const tunnel = (i * 2 >= 145 && i * 2 <= 235) || (i * 2 >= 630 && i * 2 <= 730);
+      const bridge =
+        (mapDistance >= 1660 && mapDistance <= 2040) ||
+        (mapDistance >= 2180 && mapDistance <= 2320);
+      const tunnel =
+        (mapDistance >= 2580 && mapDistance <= 2740) ||
+        (mapDistance >= 2980 && mapDistance <= 3160);
       if (!bridge && i % 5 === 0) {
-        this.box(group, [200, 0.35, 10], [0, -0.6, 0], colors.ground);
-        for (const side of [-1, 1]) {
-          this.tree(group, side * (8 + (i % 3)), 0);
-          this.box(group, [0.14, 0.8, 1.8], [side * 5.5, 0.4, 0], 0xe1ddbe);
-          this.box(group, [0.2, 1.25, 0.2], [side * 5.5, 0.55, 0.85], 0xffefce);
-        }
+        this.box(group, [200, 0.35, 10], [0, -0.6, 0], district.ground);
+        if (district.id === 'outskirts')
+          for (const side of [-1, 1]) {
+            this.tree(group, side * (8 + (i % 3)), 0);
+            this.box(group, [0.14, 0.8, 1.8], [side * 5.5, 0.4, 0], 0xe1ddbe);
+            this.box(group, [0.2, 1.25, 0.2], [side * 5.5, 0.55, 0.85], 0xffefce);
+          }
+        if (district.id === 'rail-yard')
+          for (const side of [-1, 1]) {
+            for (const railOffset of [-0.65, 0.65])
+              this.box(group, [0.1, 0.12, 10], [side * 17 + railOffset, -0.05, 0], colors.rail);
+            this.box(group, [2.4, 0.12, 0.35], [side * 17, -0.12, 0], colors.sleeper);
+            this.box(
+              group,
+              [3.5, 1.6 + (i % 3), 2.2],
+              [side * (10 + (i % 4)), 0.5, 0],
+              i % 2 ? colors.coral : colors.teal,
+            );
+            this.box(group, [0.35, 6, 0.35], [side * 6, 2.8, 0], 0x566b68);
+            this.box(
+              group,
+              [5.5, 2.4, 7],
+              [side * (22 + ((i / 5) % 3) * 5), 0.75, 0],
+              (i / 5) % 2 ? 0xd45f42 : 0x287b77,
+            );
+            if (i % 20 === 0) {
+              this.box(group, [18, 8, 24], [side * 43, 3.4, 0], 0x71827d);
+              this.box(group, [19, 0.7, 25], [side * 43, 7.5, 0], 0xd6c79d);
+              this.box(group, [1.2, 12, 1.2], [side * 31, 5.5, 0], 0x526864);
+              this.box(group, [14, 0.5, 0.5], [side * 24, 10.8, 0], colors.teal);
+            }
+          }
+        if (district.id === 'river')
+          for (const side of [-1, 1]) {
+            this.tree(group, side * (20 + (i % 4) * 4), 0);
+            this.box(group, [12, 0.55, 3], [side * 38, -0.25, 0], 0x668f70);
+            if (i % 20 === 0) this.box(group, [7, 5, 8], [side * 47, 2, 0], 0xd2bd91);
+          }
+        if (district.id === 'city')
+          for (const side of [-1, 1])
+            this.box(
+              group,
+              [5, 5 + (i % 7), 5],
+              [side * (13 + (i % 4) * 2), 2, 0],
+              i % 2 ? 0xd3b38f : 0x9faeaa,
+            );
       }
       if (!bridge && !tunnel && i % 15 === 0) {
         for (const side of [-1, 1])
@@ -75,8 +137,11 @@ export class World {
       }
       this.scenery.add(group);
     }
-    for (let i = 0; i < 126; i++) {
-      if (i * 6 >= 345 && i * 6 <= 455) continue;
+    for (let i = 0; i < SCENERY_LENGTH / 6; i++) {
+      const distance = i * 6;
+      if (distance >= 800 && distance < 2400) continue;
+      if ((distance >= 2580 && distance <= 2740) || (distance >= 2980 && distance <= 3160))
+        continue;
       const side = i % 2 ? 1 : -1,
         h = 4 + ((i * 7) % 11),
         z = -i * 6;
@@ -90,9 +155,10 @@ export class World {
         for (const dx of [-1.2, 1.2]) this.box(g, [0.7, 1, 0.08], [x + dx, y, 2.55], 0x6c9896);
       this.scenery.add(g);
     }
-    this.makeTunnel(190, 60);
-    this.makeBridge(400, 88);
-    this.makeTunnel(680, 70);
+    this.makeBridge(1850, 380);
+    this.makeBridge(2250, 140);
+    this.makeTunnel(2660, 150);
+    this.makeTunnel(3070, 170);
     // Render repeated scenery in material batches instead of hundreds of draw calls.
     this.scene.updateMatrixWorld(true);
     const batches = new Map<
