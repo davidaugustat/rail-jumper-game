@@ -48,4 +48,5 @@ The maintainer of this project will commit your changes manually.
 However, you may still use git to look at the history, if needed.
 
 ## Notes
+
 Make sure to update the `AGENTS.md` if necessary, so that it stays up to date.
