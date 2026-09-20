@@ -26,13 +26,14 @@ try {
   await page.evaluate(async () => {
     const { Game, STEP, ROOF_HEIGHT } = await import('/src/game.ts');
     const { World } = await import('/src/scene.ts');
+    const { DISTRICTS, WORLD_LENGTH } = await import('/src/map.ts');
     const game = new Game();
     game.start();
     game.entities = [];
     game.routes = [];
     game.nextEncounter = 1e9;
     const world = new World(document.querySelector('canvas'));
-    window.harness = { game, world, STEP, ROOF_HEIGHT };
+    window.harness = { game, world, STEP, ROOF_HEIGHT, DISTRICTS, WORLD_LENGTH };
     function render() {
       world.render(game, game.elapsed);
       requestAnimationFrame(render);
@@ -74,7 +75,7 @@ try {
   });
   const landmarks = await page.evaluate(() => {
     const { game: g, world: w, ROOF_HEIGHT } = window.harness;
-    g.distance = 190;
+    g.distance = 2660;
     g.y = ROOF_HEIGHT;
     w.render(g, g.elapsed);
     const tunnel = w.landmarks.find((l) => l.type === 'tunnel');
@@ -88,7 +89,7 @@ try {
     };
   });
   assert.equal(landmarks.tunnels, 2);
-  assert.equal(landmarks.bridges, 1);
+  assert.equal(landmarks.bridges, 2);
   assert.equal(landmarks.ceiling, true);
   assert.ok(landmarks.camera <= 7.1);
   assert.ok(landmarks.far >= 800);
@@ -97,11 +98,48 @@ try {
     await page.screenshot({ path: '/tmp/railjumper-tunnel-roof.png', timeout: 60000 });
   await page.evaluate(() => {
     const { game: g, world: w } = window.harness;
-    g.distance = 370;
+    g.distance = 1850;
     w.render(g, g.elapsed);
   });
   if (process.env.SCREENSHOTS)
     await page.screenshot({ path: '/tmp/railjumper-bridge-roof.png', timeout: 60000 });
+  const districts = await page.evaluate(() => {
+    const { game: g, world: w, DISTRICTS, WORLD_LENGTH } = window.harness;
+    const samples = DISTRICTS.map((district) => {
+      g.distance = district.start + 100;
+      w.render(g, g.elapsed);
+      const instances = w.batches.reduce(
+        (total, batch) =>
+          total +
+          batch.matrices.filter((matrix) => {
+            const mapDistance = -matrix.elements[14];
+            return mapDistance >= district.start && mapDistance < district.end;
+          }).length,
+        0,
+      );
+      return { id: district.id, calls: w.renderer.info.render.calls, instances };
+    });
+    return { samples, worldLength: WORLD_LENGTH };
+  });
+  assert.equal(districts.worldLength, 3200);
+  assert.deepEqual(
+    districts.samples.map((sample) => sample.id),
+    ['outskirts', 'rail-yard', 'river', 'city'],
+  );
+  assert.ok(districts.samples.every((sample) => sample.calls < 1000));
+  assert.ok(districts.samples.every((sample) => sample.instances > 1000));
+  assert.ok(
+    districts.samples.find((sample) => sample.id === 'rail-yard').instances >
+      districts.samples.find((sample) => sample.id === 'river').instances,
+  );
+  if (process.env.SCREENSHOTS) {
+    await page.evaluate(() => {
+      const { game: g, world: w } = window.harness;
+      g.distance = 1000;
+      w.render(g, g.elapsed);
+    });
+    await page.screenshot({ path: '/tmp/railjumper-rail-yard.png', timeout: 60000 });
+  }
   const horizon = await page.evaluate(() => {
     const { game: g, world: w } = window.harness;
     g.start();

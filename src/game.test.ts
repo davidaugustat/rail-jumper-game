@@ -9,10 +9,12 @@ import {
   RAMP_LENGTH,
   GENERATION_DISTANCE,
   BONK_WINDOW,
+  ENCOUNTER_FAMILIES,
   distanceAt,
   type Entity,
   type Kind,
 } from './game';
+import { DISTRICTS, WORLD_LENGTH, districtAt } from './map';
 function clean() {
   const g = new Game(() => 0.5);
   g.start();
@@ -37,6 +39,41 @@ function obstacle(kind: Kind, z = 0, lane = 0, extra = 0): Entity {
 }
 function rng(seed: number) {
   return () => (seed = (1664525 * seed + 1013904223) >>> 0) / 2 ** 32;
+}
+function followGeneratedRoute(game: Game, seconds: number, timingOffset = 0) {
+  const handled = new Set<string>();
+  let maxEntities = game.entities.length;
+  for (let i = 0; i < Math.round(seconds / STEP); i++) {
+    const due = game.routes.filter((route) => {
+      const key = `${route.encounter}:${route.time}:${route.lane}:${route.action ?? ''}`;
+      if (handled.has(key) || route.time + timingOffset > game.elapsed + STEP / 2) return false;
+      handled.add(key);
+      return true;
+    });
+    for (const route of due) {
+      while (game.lane !== route.lane) game.move(Math.sign(route.lane - game.lane));
+      if (route.action === 'jump') game.jump();
+      if (route.action === 'duck') game.duck();
+    }
+    game.update(STEP);
+    maxEntities = Math.max(maxEntities, game.entities.length);
+    if (game.phase !== 'playing') {
+      const nearby = game.entities
+        .filter((entity) => entity.kind !== 'coin' && Math.abs(entity.z) < 45)
+        .map((entity) => ({
+          kind: entity.kind,
+          lane: entity.lane,
+          z: +entity.z.toFixed(2),
+          length: +entity.length.toFixed(2),
+          extra: +entity.extra.toFixed(2),
+          ramp: entity.ramp,
+        }));
+      throw new Error(
+        `crash at ${game.elapsed.toFixed(3)}s in lane ${game.lane}: ${JSON.stringify(nearby)}, routes ${JSON.stringify(game.routes.filter((route) => Math.abs(route.time - game.elapsed) < 3))}`,
+      );
+    }
+  }
+  return maxEntities;
 }
 describe('runner mechanics', () => {
   it('clamps lanes and allows airborne lane changes', () => {
@@ -400,20 +437,100 @@ describe('lateral bonks', () => {
     expect(fresh.phase).toBe('over');
   });
 });
-describe('denser, distant obstacle generation', () => {
-  it('prefills the horizon with train-heavy mixed rows and paired rooftop routes', () => {
-    const g = new Game(rng(12));
+describe('district encounter generation', () => {
+  it('shares a 3.2 km four-district loop with rendering', () => {
+    expect(WORLD_LENGTH).toBe(3200);
+    expect(DISTRICTS.map((district) => district.name)).toEqual([
+      'Green outskirts',
+      'Rail yard',
+      'River crossing',
+      'City and tunnel corridor',
+    ]);
+    expect(districtAt(0).id).toBe('outskirts');
+    expect(districtAt(801).id).toBe('rail-yard');
+    expect(districtAt(1700).id).toBe('river');
+    expect(districtAt(2700).id).toBe('city');
+    expect(districtAt(WORLD_LENGTH + 1).id).toBe('outskirts');
+  });
+  it('prefills the horizon with varied encounters, moving trains, ramps, and action routes', () => {
+    const games = [12, 23, 41, 55, 71].map((seed) => {
+      const game = new Game(rng(seed));
+      game.start();
+      return game;
+    });
+    const entities = games.flatMap((game) => game.entities);
+    const routes = games.flatMap((game) => game.routes);
+    const families = new Set(games.flatMap((game) => game.encounters.map((e) => e.family)));
+    expect(Math.max(...games[0].entities.map((e) => e.z))).toBeGreaterThan(
+      GENERATION_DISTANCE - 50,
+    );
+    expect(families.size).toBeGreaterThanOrEqual(8);
+    expect(entities.filter((e) => e.kind === 'train' && e.ramp).length).toBeGreaterThan(1);
+    expect(entities.some((e) => e.kind === 'train' && e.extra > 0)).toBe(true);
+    expect(routes.some((route) => route.action === 'jump')).toBe(true);
+    expect(routes.some((route) => route.action === 'duck')).toBe(true);
+    expect(routes.some((route) => route.surface === 'roof')).toBe(true);
+  });
+  it('keeps every roof-height coin on a matching train carriage', () => {
+    let checked = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const g = new Game(rng(seed));
+      g.start();
+      const roofCoins = g.entities.filter(
+        (entity) => entity.kind === 'coin' && entity.y > ROOF_HEIGHT + 0.5,
+      );
+      for (const coin of roofCoins) {
+        checked++;
+        const carrier = g.entities.find(
+          (entity) =>
+            entity.kind === 'train' &&
+            entity.lane === coin.lane &&
+            entity.extra === coin.extra &&
+            Math.abs(entity.z - coin.z) <= entity.length / 2,
+        );
+        expect(carrier, `unsupported roof coin at z=${coin.z.toFixed(1)}`).toBeDefined();
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+  it('does not leave fifty-meter gaps without a visible hazard', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const g = new Game(rng(seed));
+      g.start();
+      const hazards = g.entities
+        .filter((entity) => entity.kind !== 'coin' && entity.z > 150 && entity.z < 560)
+        .sort((a, b) => a.z - b.z);
+      let maximumGap = 0;
+      let gapPair: Entity[] = [];
+      for (let index = 1; index < hazards.length; index++) {
+        const previous = hazards[index - 1];
+        const current = hazards[index];
+        const gap = current.z - current.length / 2 - (previous.z + previous.length / 2);
+        if (gap > maximumGap) {
+          maximumGap = gap;
+          gapPair = [previous, current];
+        }
+      }
+      expect(maximumGap, `seed ${seed}: ${JSON.stringify(gapPair)}`).toBeLessThan(50);
+    }
+  });
+  it('leaves room for the two-lane escape between two-stage trains', () => {
+    const g = new Game(rng(8));
     g.start();
-    expect(Math.max(...g.entities.map((e) => e.z))).toBeGreaterThan(GENERATION_DISTANCE - 50);
-    expect(g.entities.filter((e) => e.kind === 'train' && e.ramp).length).toBeGreaterThan(1);
-    expect(g.entities.some((e) => e.kind === 'train' && e.extra > 0)).toBe(true);
-    const rows = g.routes.filter((r) => !r.rooftop);
-    expect(rows[1].time - rows[0].time).toBeLessThan(1.11);
-    expect(g.entities.filter((e) => e.kind !== 'coin').length).toBeGreaterThan(30);
-    const trains = g.entities.filter((e) => e.kind === 'train').length;
-    const barriers = g.entities.filter((e) => e.kind === 'low' || e.kind === 'high').length;
-    expect(trains).toBeGreaterThan(barriers);
-    expect(g.routes.filter((r) => r.rooftop).length).toBeGreaterThan(g.routes.length / 4);
+    const encounter = g.encounters.find(
+      (candidate) => candidate.family === 'two-stage-lane-change',
+    )!;
+    const firstCenter = distanceAt(encounter.start + 0.75);
+    const trains = g.entities
+      .filter((entity) => entity.kind === 'train' && entity.extra === 0)
+      .sort((a, b) => a.z - b.z);
+    const firstIndex = trains.findIndex((train) => Math.abs(train.z - firstCenter) < 0.001);
+    expect(firstIndex).toBeGreaterThanOrEqual(0);
+    const first = trains[firstIndex];
+    const second = trains[firstIndex + 1];
+    const clearGap = second.z - second.length / 2 - (first.z + first.length / 2);
+
+    expect(clearGap).toBeGreaterThan(12);
   });
   it('oncoming trains stay aligned to scheduled encounters through acceleration', () => {
     const g = clean();
@@ -422,34 +539,83 @@ describe('denser, distant obstacle generation', () => {
     expect(e.z).toBeCloseTo(0, 7);
     expect(g.phase).toBe('playing');
   });
-  it('keeps a reachable route and bounded object counts across many long runs', () => {
-    for (let seed = 1; seed <= 12; seed++) {
+  it('keeps a reachable route and bounded object counts for two complete world loops', () => {
+    const coverage = new Set<string>();
+    for (let seed = 1; seed <= 8; seed++) {
       const g = new Game(rng(seed));
       g.start();
-      let maxEntities = 0;
-      for (let i = 0; i < 120 * 180; i++) {
-        const next = g.routes.find((r) => r.time >= g.elapsed - 0.15);
-        if (next && next.time < g.elapsed + 0.5) g.lane = next.safe;
-        g.update(STEP);
-        maxEntities = Math.max(maxEntities, g.entities.length);
-        if (g.phase !== 'playing') {
-          const nearby = g.entities
-            .filter((e) => e.kind !== 'coin' && Math.abs(e.z) < 45)
-            .map((e) => ({
-              kind: e.kind,
-              lane: e.lane,
-              z: +e.z.toFixed(2),
-              length: +e.length.toFixed(2),
-              extra: +e.extra.toFixed(2),
-              ramp: e.ramp,
-            }));
-          throw new Error(
-            `seed ${seed}, time ${g.elapsed.toFixed(3)}, lane ${g.lane}, x ${g.x.toFixed(2)}, next ${JSON.stringify(next)}, nearby ${JSON.stringify(nearby)}`,
-          );
+      const maxEntities = followGeneratedRoute(g, 285);
+      g.encounters.forEach((encounter) =>
+        coverage.add(`${encounter.family}:${encounter.entryLane}:${encounter.mirrored}`),
+      );
+      expect(maxEntities).toBeLessThan(350);
+      expect(g.distance).toBeGreaterThan(6400);
+    }
+    for (const family of ENCOUNTER_FAMILIES)
+      for (const lane of [-1, 0, 1])
+        for (const mirrored of [false, true])
+          expect(coverage).toContain(`${family}:${lane}:${mirrored}`);
+  }, 15_000);
+  it.each([-0.05, 0.05])('tolerates route inputs offset by %s seconds', (offset) => {
+    const g = new Game(rng(73));
+    g.start();
+    followGeneratedRoute(g, 70, offset);
+    expect(g.phase).toBe('playing');
+  });
+  it('uses a safe fallback when bounded candidate validation rejects every choice', () => {
+    const g = new Game(rng(5));
+    g.candidateFilter = () => false;
+    g.start();
+    expect(g.rejectedCandidates).toBeGreaterThan(0);
+    expect(g.fallbackCount).toBeGreaterThan(0);
+    expect(g.encounters.every((encounter) => encounter.fallback)).toBe(true);
+    followGeneratedRoute(g, 30);
+  });
+  it('is deterministic, varies between seeds, and excludes the three recent families', () => {
+    const sequence = (seed: number) => {
+      const g = new Game(rng(seed));
+      g.start();
+      return g.encounters.map((encounter) => [
+        encounter.family,
+        encounter.mirrored,
+        encounter.entryLane,
+        encounter.exitLane,
+      ]);
+    };
+    expect(sequence(91)).toEqual(sequence(91));
+    expect(sequence(91)).not.toEqual(sequence(92));
+    const families = sequence(93).map(([family]) => family);
+    families.forEach((family, index) => {
+      expect(families.slice(Math.max(0, index - 3), index)).not.toContain(family);
+    });
+  });
+  it('reaches every encounter family and varies coin clusters, heights, and gaps', () => {
+    const seen = new Set<string>();
+    const clusterSizes = new Set<number>();
+    const heights = new Set<number>();
+    const gaps = new Set<number>();
+    for (let seed = 1; seed <= 30; seed++) {
+      const g = new Game(rng(seed));
+      g.start();
+      g.encounters.forEach((encounter) => seen.add(encounter.family));
+      const coins = g.entities.filter((entity) => entity.kind === 'coin').sort((a, b) => a.z - b.z);
+      let cluster = 1;
+      for (let index = 0; index < coins.length; index++) {
+        heights.add(+coins[index].y.toFixed(1));
+        if (index === 0) continue;
+        const gap = +(coins[index].z - coins[index - 1].z).toFixed(1);
+        gaps.add(gap);
+        if (gap < 6) cluster++;
+        else {
+          clusterSizes.add(cluster);
+          cluster = 1;
         }
       }
-      expect(maxEntities).toBeLessThan(350);
-      expect(g.distance).toBeGreaterThan(4500);
+      clusterSizes.add(cluster);
     }
+    expect(seen).toEqual(new Set(ENCOUNTER_FAMILIES));
+    expect(clusterSizes.size).toBeGreaterThan(3);
+    expect(heights.size).toBeGreaterThan(4);
+    expect(gaps.size).toBeGreaterThan(8);
   });
 });
