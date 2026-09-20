@@ -514,6 +514,24 @@ describe('district encounter generation', () => {
       expect(maximumGap, `seed ${seed}: ${JSON.stringify(gapPair)}`).toBeLessThan(50);
     }
   });
+  it('leaves room for the two-lane escape between two-stage trains', () => {
+    const g = new Game(rng(8));
+    g.start();
+    const encounter = g.encounters.find(
+      (candidate) => candidate.family === 'two-stage-lane-change',
+    )!;
+    const firstCenter = distanceAt(encounter.start + 0.75);
+    const trains = g.entities
+      .filter((entity) => entity.kind === 'train' && entity.extra === 0)
+      .sort((a, b) => a.z - b.z);
+    const firstIndex = trains.findIndex((train) => Math.abs(train.z - firstCenter) < 0.001);
+    expect(firstIndex).toBeGreaterThanOrEqual(0);
+    const first = trains[firstIndex];
+    const second = trains[firstIndex + 1];
+    const clearGap = second.z - second.length / 2 - (first.z + first.length / 2);
+
+    expect(clearGap).toBeGreaterThan(12);
+  });
   it('oncoming trains stay aligned to scheduled encounters through acceleration', () => {
     const g = clean();
     const e = g.add('train', 1, 10, { extra: 8 });

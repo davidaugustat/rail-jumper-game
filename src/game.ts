@@ -393,14 +393,14 @@ export class Game {
       case 'two-stage-lane-change': {
         train(entry, base, { length: 13, extra: 0 });
         barrier('low', far, base);
-        train(adjacent, base + 1.12, { length: 13, extra: 0 });
-        barrier('high', entry, base + 1.12);
+        train(adjacent, base + 1.45, { length: 13, extra: 0 });
+        barrier('high', entry, base + 1.45);
         draft.steps.push(this.routeStep(base - 0.58, adjacent));
-        draft.steps.push(this.routeStep(base + 0.55, far));
+        draft.steps.push(this.routeStep(base + 0.88, far));
         draft.exitLane = far;
-        draft.end = base + 1.34;
+        draft.end = base + 1.67;
         this.addCoinPattern(draft, adjacent, base, 1);
-        this.addCoinPattern(draft, far, base + 1.12, 2);
+        this.addCoinPattern(draft, far, base + 1.45, 2);
         break;
       }
       case 'ramp-ascent': {
