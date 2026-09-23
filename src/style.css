@@ -177,9 +177,19 @@ canvas {
   letter-spacing: 1.8px;
 }
 .stat > strong {
+  display: block;
   font-family: Outfit, sans-serif;
   font-size: 25px;
   letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+#score {
+  width: calc(6ch + 6px);
+}
+#coins {
+  display: inline-block;
+  width: calc(3ch + 3px);
+  text-align: left;
 }
 .stat i {
   color: #d8942e;

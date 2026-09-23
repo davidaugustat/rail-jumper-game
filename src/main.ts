@@ -208,7 +208,7 @@ function frame(now: number) {
       accumulator -= STEP;
     }
   } else accumulator = 0;
-  $('score').textContent = String(game.score).padStart(5, '0');
+  $('score').textContent = String(game.score);
   $('coins').textContent = String(game.coins);
   app.classList.toggle('bonked', game.bonkFlash > 0);
   world.render(game, game.elapsed);
