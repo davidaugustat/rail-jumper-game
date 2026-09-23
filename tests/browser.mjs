@@ -22,6 +22,59 @@ async function elementsOutsideViewport(page, selectors) {
     });
   }, selectors);
 }
+async function assertHudStable(page) {
+  const layouts = await page.evaluate(() => {
+    const hud = document.querySelector('#hud');
+    const score = document.querySelector('#score');
+    const coins = document.querySelector('#coins');
+    const star = document.querySelector('.coins i');
+    const pause = document.querySelector('#pause');
+    return [
+      ['0', '0'],
+      ['1', '1'],
+      ['9', '9'],
+      ['50', '10'],
+      ['100', '100'],
+      ['11111', '100'],
+      ['99999', '100'],
+      ['100000', '100'],
+    ].map(([scoreValue, coinValue]) => {
+      score.textContent = scoreValue;
+      coins.textContent = coinValue;
+      const scoreText = document.createRange();
+      scoreText.selectNodeContents(score);
+      const coinText = document.createRange();
+      coinText.selectNodeContents(coins);
+      const starText = document.createRange();
+      starText.selectNodeContents(star);
+      const rect = (element) => {
+        const { x, width } = element.getBoundingClientRect();
+        return { x, width };
+      };
+      return {
+        hud: rect(hud),
+        score: rect(score),
+        coins: rect(coins),
+        pause: rect(pause),
+        scoreTextWidth: scoreText.getBoundingClientRect().width,
+        coinTextLeft: coinText.getBoundingClientRect().left,
+        starGap: coinText.getBoundingClientRect().left - starText.getBoundingClientRect().right,
+      };
+    });
+  });
+  for (const layout of layouts.slice(1)) {
+    assert.deepEqual(layout.hud, layouts[0].hud);
+    assert.deepEqual(layout.score, layouts[0].score);
+    assert.deepEqual(layout.coins, layouts[0].coins);
+    assert.deepEqual(layout.pause, layouts[0].pause);
+    assert.ok(Math.abs(layout.coinTextLeft - layouts[0].coinTextLeft) < 1);
+    assert.ok(layout.starGap >= 0 && layout.starGap < 12);
+  }
+  for (const layout of layouts.slice(1, 3)) {
+    assert.ok(Math.abs(layout.scoreTextWidth - layouts[0].scoreTextWidth) < 1);
+  }
+  assert.ok(Math.abs(layouts[5].scoreTextWidth - layouts[6].scoreTextWidth) < 1);
+}
 const browser = await chromium.launch({
   headless: true,
   args: [
@@ -78,6 +131,7 @@ try {
   await page.locator('#start').click();
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#hud').isVisible(), true);
+  await assertHudStable(page);
   assert.deepEqual(
     await page.locator('.controls').evaluate((element) => {
       const style = getComputedStyle(element);
@@ -96,9 +150,22 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#modal-title').textContent(), 'On a break.');
   assert.equal(await page.locator('.controls').isVisible(), true);
+  const pausedState = await page.evaluate(() => {
+    const game = window[Symbol.for('railjumper.game')];
+    const state = { distance: game.distance, coins: game.coins };
+    game.distance = 50;
+    game.coins = 0;
+    return state;
+  });
+  await page.waitForFunction(() => document.querySelector('#score').textContent === '50');
   const score = await page.locator('#score').textContent();
   await page.waitForTimeout(200);
   assert.equal(await page.locator('#score').textContent(), score);
+  await page.evaluate(({ distance, coins }) => {
+    const game = window[Symbol.for('railjumper.game')];
+    game.distance = distance;
+    game.coins = coins;
+  }, pausedState);
   await page.locator('#continue').click();
   await page.evaluate(() => {
     const game = window[Symbol.for('railjumper.game')];
@@ -193,6 +260,7 @@ try {
   await swipe(touch, { x: 100, y: 300 }, { x: 180, y: 300 });
   assert.equal(await mobile.evaluate(() => window[Symbol.for('railjumper.game')].phase), 'ready');
   await mobile.locator('#start').click();
+  await assertHudStable(mobile);
   await mobile.evaluate(() => {
     const game = window[Symbol.for('railjumper.game')];
     game.entities = [];
