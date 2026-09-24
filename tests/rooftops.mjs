@@ -132,6 +132,29 @@ try {
     districts.samples.find((sample) => sample.id === 'rail-yard').instances >
       districts.samples.find((sample) => sample.id === 'river').instances,
   );
+  const shadowContact = await page.evaluate(() => {
+    const { world: w } = window.harness;
+    const sun = w.scene.children.find((child) => child.isDirectionalLight);
+    const crates = w.batches.flatMap(({ mesh, matrices }) => {
+      const color = mesh.material.color.getHex();
+      if (color !== 0xf07150 && color !== 0x207f7d) return [];
+      return matrices
+        .filter((matrix) => {
+          const x = Math.abs(matrix.elements[12]);
+          const z = -matrix.elements[14];
+          const height = matrix.elements[5];
+          return z >= 800 && z < 1600 && x >= 10 && x <= 13 && height >= 1.6 && height <= 3.6;
+        })
+        .map((matrix) => matrix.elements[13] - matrix.elements[5] / 2);
+    });
+    return {
+      biasDistance: Math.abs(sun.shadow.bias) * (sun.shadow.camera.far - sun.shadow.camera.near),
+      crates,
+    };
+  });
+  assert.ok(shadowContact.biasDistance < 0.005);
+  assert.ok(shadowContact.crates.length > 0);
+  assert.ok(shadowContact.crates.every((bottom) => bottom <= -0.425 + 0.001));
   if (process.env.SCREENSHOTS) {
     await page.evaluate(() => {
       const { game: g, world: w } = window.harness;

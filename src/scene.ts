@@ -43,7 +43,7 @@ export class World {
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     Object.assign(sun.shadow.camera, { left: -100, right: 100, top: 120, bottom: -300, far: 500 });
-    sun.shadow.bias = -0.001;
+    sun.shadow.bias = 0;
     this.scene.add(sun);
     // The railway sits above the water; bridge sections expose the river below.
     this.box(this.scene, [450, 0.4, WORLD_LENGTH + 200], [0, -7, -WORLD_LENGTH / 2], 0x63adb4);
@@ -98,10 +98,10 @@ export class World {
             this.box(
               group,
               [3.5, 1.6 + (i % 3), 2.2],
-              [side * (10 + (i % 4)), 0.5, 0],
+              [side * (10 + (i % 4)), 0.375, 0],
               i % 2 ? colors.coral : colors.teal,
             );
-            this.box(group, [0.35, 6, 0.35], [side * 6, 2.8, 0], 0x566b68);
+            this.box(group, [0.35, 6.225, 0.35], [side * 6, 2.6875, 0], 0x566b68);
             this.box(
               group,
               [5.5, 2.4, 7],
@@ -132,7 +132,7 @@ export class World {
       }
       if (!bridge && !tunnel && i % 15 === 0) {
         for (const side of [-1, 1])
-          this.box(group, [0.2, 11.5, 0.2], [side * 5.8, 5.65, 0], colors.teal);
+          this.box(group, [0.2, 11.825, 0.2], [side * 5.8, 5.4875, 0], colors.teal);
         this.box(group, [11.8, 0.22, 0.22], [0, 11.4, 0], colors.teal);
       }
       this.scenery.add(group);
@@ -254,7 +254,7 @@ export class World {
     return m;
   }
   tree(parent: T.Object3D, x: number, z: number) {
-    this.box(parent, [0.32, 1.5, 0.32], [x, 0.5, z], 0x8c8464);
+    this.box(parent, [0.32, 1.5, 0.32], [x, 0.325, z], 0x8c8464);
     const crown = new T.Mesh(new T.IcosahedronGeometry(1.5, 0), this.material(0x5a9272));
     crown.position.set(x, 2.3, z);
     crown.scale.y = 1.3;
